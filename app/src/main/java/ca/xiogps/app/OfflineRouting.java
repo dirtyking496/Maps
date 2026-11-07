@@ -5,6 +5,8 @@ import com.valhalla.valhalla.Valhalla;
 import com.valhalla.valhalla.config.ValhallaConfigFactory;
 import com.valhalla.config.models.ValhallaConfig;
 import java.io.File;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 /** Local-only automobile routing against an installed Valhalla tile extract. */
@@ -13,12 +15,27 @@ public final class OfflineRouting {
 
     public static String route(Context context, double fromLat, double fromLon,
                                double toLat, double toLon) throws Exception {
-        File tileExtract = new File(context.getFilesDir(), "offline/quebec/valhalla_tiles.tar");
-        if (!tileExtract.isFile() || tileExtract.length() < 1024 * 1024) {
-            throw new IllegalStateException("CARTE QUÉBEC ABSENTE : importe le fichier de données Valhalla (.tar) avant de calculer.");
+        File packDir = new File(context.getFilesDir(), "offline/quebec");
+        File tileExtract = new File(packDir, "valhalla_tiles.tar");
+        File adminDb = new File(packDir, "admin.sqlite");
+        File timezoneDb = new File(packDir, "timezones.sqlite");
+        if (!tileExtract.isFile() || tileExtract.length() < 1024 * 1024
+                || !adminDb.isFile() || adminDb.length() == 0
+                || !timezoneDb.isFile() || timezoneDb.length() == 0) {
+            throw new IllegalStateException("PAQUET QUÉBEC ABSENT OU INCOMPLET : importe le ZIP de cartes XIO GPS.");
         }
 
-        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.usingTileExtract(tileExtract.getAbsolutePath(), null);
+        String configJson;
+        try (InputStream input = ValhallaConfigFactory.class.getResourceAsStream(
+                "/com/valhalla/valhalla/default.json")) {
+            if (input == null) throw new IllegalStateException("Configuration Valhalla introuvable.");
+            configJson = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        configJson = configJson
+                .replace("\\"/data/valhalla/tiles.tar\\"", org.json.JSONObject.quote(tileExtract.getAbsolutePath()))
+                .replace("\\"/data/valhalla/admin.sqlite\\"", org.json.JSONObject.quote(adminDb.getAbsolutePath()))
+                .replace("\\"/data/valhalla/tz_world.sqlite\\"", org.json.JSONObject.quote(timezoneDb.getAbsolutePath()));
+        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.fromJson(configJson);
         try (Valhalla engine = new Valhalla(context, config)) {
             JSONObject request = new JSONObject();
             org.json.JSONArray locations = new org.json.JSONArray();
