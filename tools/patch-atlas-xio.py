@@ -172,6 +172,8 @@ class XioAutomaticNavigationSessionTest {
             assertEquals("Faites demi-tour", turnInstruction(TurnCommand.U_TURN, null))
             assertEquals("Au rond-point, prenez la 1re sortie",
                 turnInstruction(TurnCommand.ROUNDABOUT, null, 1))
+            assertEquals("Dans 200 mètres, Tournez à gauche sur Rue Principale",
+                announcementFor(TurnPoint(TurnCommand.TURN_LEFT, 0.0, 0.0, 0, 0.0, "Rue Principale"), 200) { "$it mètres" })
             assertEquals("Vous êtes arrivé à destination",
                 turnInstruction(TurnCommand.ARRIVE, null))
         } finally {
