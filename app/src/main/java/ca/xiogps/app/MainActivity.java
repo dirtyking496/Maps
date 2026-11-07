@@ -17,6 +17,11 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -43,12 +48,16 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private TextView status;
     private EditText destination;
     private Location lastLocation;
+    private MapView mapView;
+    private MapLibreMap map;
+    private boolean mapCenteredOnGps = false;
     private TextToSpeech voice;
     private boolean background = false;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        MapLibre.getInstance(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         voice = new TextToSpeech(this, result -> { if (result == TextToSpeech.SUCCESS) voice.setLanguage(Locale.CANADA_FRENCH); });
         LinearLayout root = new LinearLayout(this);
@@ -60,6 +69,17 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         title.setText("XIO GPS  ·  GLOW NÉON");
         title.setTextColor(0xFF39D5FF); title.setTextSize(25); title.setGravity(Gravity.CENTER);
         root.addView(title);
+
+        mapView = new MapView(this);
+        mapView.onCreate(state);
+        root.addView(mapView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(270)));
+        mapView.getMapAsync(mapInstance -> {
+            map = mapInstance;
+            map.setStyle("https://tiles.openfreemap.org/styles/liberty");
+            map.setCameraPosition(new CameraPosition.Builder()
+                    .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
+        });
 
         destination = new EditText(this);
         destination.setSingleLine(true); destination.setHint("Adresse en ligne ou coordonnées lat,lon hors ligne");
@@ -172,6 +192,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         }
         file.delete();
     }
+
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     private Button button(String label) {
         Button b = new Button(this); b.setText(label); b.setTextColor(0xFFFFFFFF);
@@ -337,12 +359,37 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private void speak(String message) {
         if (voice != null) voice.speak(message, TextToSpeech.QUEUE_FLUSH, null, "xio-intro");
     }
-    @Override public void onLocationChanged(@NonNull Location location) { lastLocation = location; status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m", location.getLatitude(), location.getLongitude(), location.getAccuracy())); }
+    @Override public void onLocationChanged(@NonNull Location location) {
+        lastLocation = location;
+        status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m",
+                location.getLatitude(), location.getLongitude(), location.getAccuracy()));
+        if (map != null && !mapCenteredOnGps) {
+            map.setCameraPosition(new CameraPosition.Builder()
+                    .target(new LatLng(location.getLatitude(), location.getLongitude()))
+                    .zoom(14.0).build());
+            mapCenteredOnGps = true;
+        }
+    }
     @Override public void onRequestPermissionsResult(int request, @NonNull String[] permissions, @NonNull int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == GPS_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) requestGps();
     }
-    @Override protected void onDestroy() { network.shutdownNow(); if (locationManager != null) locationManager.removeUpdates(this); if (voice != null) { voice.stop(); voice.shutdown(); } super.onDestroy(); }
+    @Override protected void onStart() { super.onStart(); if (mapView != null) mapView.onStart(); }
+    @Override protected void onResume() { super.onResume(); if (mapView != null) mapView.onResume(); }
+    @Override protected void onPause() { if (mapView != null) mapView.onPause(); super.onPause(); }
+    @Override protected void onStop() { if (mapView != null) mapView.onStop(); super.onStop(); }
+    @Override public void onLowMemory() { super.onLowMemory(); if (mapView != null) mapView.onLowMemory(); }
+    @Override protected void onDestroy() {
+        network.shutdownNow();
+        if (locationManager != null) locationManager.removeUpdates(this);
+        if (voice != null) { voice.stop(); voice.shutdown(); }
+        if (mapView != null) mapView.onDestroy();
+        super.onDestroy();
+    }
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (mapView != null) mapView.onSaveInstanceState(outState);
+    }
     @Override public void onStatusChanged(String p, int s, Bundle b) {}
     @Override public void onProviderEnabled(@NonNull String p) {}
     @Override public void onProviderDisabled(@NonNull String p) {}
