@@ -190,4 +190,22 @@ class XioAutomaticNavigationSessionTest {
     }
 }
 ''', encoding="utf-8")
+
+progress = root / "app/src/main/kotlin/com/danemadsen/atlas/nav/navigation-progress.kt"
+pt = progress.read_text(encoding="utf-8")
+pt = pt.replace('announcements.add("You have arrived.")',
+    'announcements.add(if (java.util.Locale.getDefault().language == "fr") "Vous êtes arrivé à destination." else "You have arrived.")')
+old_prefix = 'return if (atMeters > 0) "In \${spokenDistance(atMeters)}, $instruction" else instruction'
+new_prefix = 'return if (atMeters > 0) { if (java.util.Locale.getDefault().language == "fr") "Dans \${spokenDistance(atMeters)}, $instruction" else "In \${spokenDistance(atMeters)}, $instruction" } else instruction'
+if old_prefix not in pt:
+    raise SystemExit("announcementFor source did not match; refusing a risky patch")
+progress.write_text(pt.replace(old_prefix, new_prefix), encoding="utf-8")
+
+service = root / "app/src/main/kotlin/com/danemadsen/atlas/services/navigation-service.kt"
+st = service.read_text(encoding="utf-8")
+if 'speaker.speak("Recalculating.")' not in st:
+    raise SystemExit("reroute voice source did not match; refusing a risky patch")
+service.write_text(st.replace('speaker.speak("Recalculating.")',
+    'speaker.speak(if (java.util.Locale.getDefault().language == "fr") "Recalcul de l’itinéraire." else "Recalculating.")'), encoding="utf-8")
+
 print("XIO GPS French voice overlay and deterministic auto-session tests installed.")
