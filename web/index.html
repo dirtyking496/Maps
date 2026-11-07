@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06111e"><meta name="description" content="XIO GPS — navigation automobile pour le Québec.">
+<link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<title>XIO GPS — Navigation</title>
+<style>
+:root{color-scheme:dark;--bg:#06111e;--panel:#0d2031;--cyan:#35d9ff;--muted:#a8bdcc}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#fff;font:16px system-ui, sans-serif}.app{max-width:850px;margin:auto;padding:14px}.top{text-align:center;padding:12px}.top h1{margin:0;color:var(--cyan);letter-spacing:2px;font-size:27px}.top p{margin:4px;color:var(--muted);font-size:13px}.panel{background:var(--panel);border:1px solid #193b53;border-radius:16px;padding:12px;margin:10px 0}#map{height:48vh;min-height:300px;border-radius:13px;background:#12283a}.field{width:100%;padding:14px;border-radius:10px;border:1px solid #31536b;background:#061522;color:white;font-size:16px;margin:5px 0 10px}button{border:0;border-radius:10px;background:#123b55;color:white;font-weight:700;padding:13px 12px;margin:4px 2px;min-height:46px}button.primary{background:#007da4;color:white}button:disabled{opacity:.45}.actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.actions button{width:100%;margin:0}.status{color:var(--cyan);min-height:24px}.small{font-size:12px;color:var(--muted);line-height:1.5}.warn{color:#ffd27b}.routeinfo{font-size:14px;color:#d7e8f2}.install{display:none}@media(min-width:650px){#map{height:520px}.app{padding:22px}}
+</style>
+</head>
+<body><main class="app">
+<header class="top"><h1>XIO GPS</h1><p>NAVIGATION · QUÉBEC · ÉDITION WEB</p></header>
+<section class="panel"><div id="map" role="application" aria-label="Carte interactive"></div></section>
+<section class="panel">
+<label for="destination">Destination</label><input id="destination" class="field" placeholder="Adresse, ville ou latitude,longitude" autocomplete="street-address">
+<div class="actions">
+<button id="gps" class="primary">◎ ACTIVER LE GPS</button>
+<button id="go">➤ CALCULER ROUTE</button>
+<button id="voice">🔊 ACTIVER LA VOIX</button>
+<button id="install" class="install">＋ INSTALLER XIO GPS</button>
+</div>
+<p id="status" class="status" aria-live="polite">Prêt — active le GPS pour commencer.</p><p id="routeinfo" class="routeinfo"></p>
+<p class="small warn">Important : cette édition Web utilise Internet pour les cartes et les itinéraires. Le mode avion, le moteur Valhalla hors ligne et le GPS continu écran verrouillé restent réservés à l’application Android native avec le paquet de cartes du Québec installé.</p>
+<p class="small">Pour de meilleurs résultats, autorise la localisation et ouvre ce site en HTTPS. Tu peux l’ajouter à l’écran d’accueil Android.</p>
+</section>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function(){
+const $=id=>document.getElementById(id);let map,me,routeLayer,watchId=null,position=null,voiceOn=false,destinationMarker=null;
+const status=t=>$('status').textContent=t;
+map=L.map('map').setView([46.8,-71.2],6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors',crossOrigin:true}).addTo(map);
+map.on('click',e=>{$('destination').value=e.latlng.lat.toFixed(6)+','+e.latlng.lng.toFixed(6);status('Destination choisie sur la carte. Appuie sur Calculer route.');});
+function say(t){if(!voiceOn||!('speechSynthesis'in window))return;speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(t);u.lang='fr-CA';u.rate=1;speechSynthesis.speak(u)}
+$('voice').onclick=()=>{voiceOn=!voiceOn;$('voice').textContent=voiceOn?'🔊 VOIX ACTIVÉE':'🔊 ACTIVER LA VOIX';if(voiceOn)say('XIO GPS est prêt. Bonne route!')};
+$('gps').onclick=()=>{if(!navigator.geolocation){status('Géolocalisation non prise en charge.');return}if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;$('gps').textContent='◎ ACTIVER LE GPS';status('GPS arrêté.');return}
+status('Recherche du signal GPS…');watchId=navigator.geolocation.watchPosition(p=>{position=[p.coords.latitude,p.coords.longitude];if(!me)me=L.marker(position).addTo(map).bindPopup('Votre position');else me.setLatLng(position);if(!map._xioCentered){map.setView(position,15);map._xioCentered=true}status('GPS actif · précision ±'+Math.round(p.coords.accuracy)+' m');},e=>status('GPS : '+e.message),{enableHighAccuracy:true,maximumAge:3000,timeout:20000});$('gps').textContent='■ ARRÊTER GPS'};
+async function locate(q){let m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){let lat=+m[1],lon=+m[2];if(Math.abs(lat)<=90&&Math.abs(lon)<=180)return [lat,lon]}let u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q='+encodeURIComponent(q);let r=await fetch(u,{headers:{'Accept-Language':'fr-CA,fr'}});if(!r.ok)throw Error('Recherche adresse indisponible');let a=await r.json();if(!a.length)throw Error('Adresse introuvable');return [+a[0].lat,+a[0].lon]}
+$('go').onclick=async()=>{try{if(!position){status('Active le GPS avant de calculer.');return}let q=$('destination').value.trim();if(!q)throw Error('Entre une destination ou touche la carte.');$('go').disabled=true;status('Recherche de la destination…');let dest=await locate(q);status('Calcul de l’itinéraire…');let url='https://router.project-osrm.org/route/v1/driving/'+position[1]+','+position[0]+';'+dest[1]+','+dest[0]+'?overview=full&geometries=geojson&steps=true';let res=await fetch(url);if(!res.ok)throw Error('Service d’itinéraire indisponible');let data=await res.json();if(data.code!=='Ok'||!data.routes.length)throw Error('Aucun itinéraire trouvé');let rt=data.routes[0],coords=rt.geometry.coordinates.map(c=>[c[1],c[0]]);if(routeLayer)map.removeLayer(routeLayer);routeLayer=L.polyline(coords,{color:'#00c8ff',weight:6}).addTo(map);if(destinationMarker)map.removeLayer(destinationMarker);destinationMarker=L.marker(dest).addTo(map).bindPopup('Destination');map.fitBounds(routeLayer.getBounds(),{padding:[25,25]});let km=(rt.distance/1000).toFixed(1),min=Math.round(rt.duration/60);$('routeinfo').textContent='Distance : '+km+' km · Durée estimée : '+min+' min';status('Itinéraire prêt. Conduis prudemment.');say('Itinéraire calculé. Distance '+km+' kilomètres. Durée estimée '+min+' minutes.');}catch(e){status(e.message||'Erreur de calcul');}finally{$('go').disabled=false}};
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+let deferred=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('install').style.display='block'});$('install').onclick=async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;$('install').style.display='none'};
+})();
+</script></body></html>
