@@ -80,19 +80,6 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         mapView.onCreate(state);
         root.addView(mapView, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(270)));
-        mapView.getMapAsync(mapInstance -> {
-            map = mapInstance;
-            loadMapStyle();
-            map.setCameraPosition(new CameraPosition.Builder()
-                    .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
-            map.addOnMapClickListener(point -> {
-                destination.setText(String.format(Locale.US, "%.6f,%.6f",
-                        point.getLatitude(), point.getLongitude()));
-                status.setText("Destination choisie sur la carte · appuie sur NAVIGATION HORS LIGNE.");
-                return true;
-            });
-        });
-
         destination = new EditText(this);
         destination.setSingleLine(true); destination.setHint("Adresse en ligne ou coordonnées lat,lon hors ligne");
         destination.setTextColor(0xFFFFFFFF); destination.setHintTextColor(0xFF9AAFC2);
@@ -138,6 +125,20 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         status.setTextColor(0xFFFFFFFF); status.setText("État : prêt · active le GPS pour commencer");
         status.setPadding(0, 24, 0, 0); root.addView(status);
         setContentView(root);
+
+        mapView.getMapAsync(mapInstance -> {
+            map = mapInstance;
+            loadMapStyle();
+            map.setCameraPosition(new CameraPosition.Builder()
+                    .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
+            map.addOnMapClickListener(point -> {
+                destination.setText(String.format(Locale.US, "%.6f,%.6f",
+                        point.getLatitude(), point.getLongitude()));
+                status.setText("Destination choisie sur la carte · appuie sur NAVIGATION HORS LIGNE.");
+                return true;
+            });
+        });
+
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
