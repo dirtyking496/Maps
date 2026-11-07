@@ -36,10 +36,14 @@ public final class OfflineRouting {
             while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
             configJson = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         }
+        String quote = String.valueOf('"');
         configJson = configJson
-                .replace("\\"/data/valhalla/tiles.tar\\"", org.json.JSONObject.quote(tileExtract.getAbsolutePath()))
-                .replace("\\"/data/valhalla/admin.sqlite\\"", org.json.JSONObject.quote(adminDb.getAbsolutePath()))
-                .replace("\\"/data/valhalla/tz_world.sqlite\\"", org.json.JSONObject.quote(timezoneDb.getAbsolutePath()));
+                .replace(quote + "/data/valhalla/tiles.tar" + quote,
+                        org.json.JSONObject.quote(tileExtract.getAbsolutePath()))
+                .replace(quote + "/data/valhalla/admin.sqlite" + quote,
+                        org.json.JSONObject.quote(adminDb.getAbsolutePath()))
+                .replace(quote + "/data/valhalla/tz_world.sqlite" + quote,
+                        org.json.JSONObject.quote(timezoneDb.getAbsolutePath()));
         ValhallaConfig config = ValhallaConfigFactory.INSTANCE.fromJson(configJson);
         try (Valhalla engine = new Valhalla(context, config)) {
             JSONObject request = new JSONObject();
