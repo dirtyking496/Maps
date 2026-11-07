@@ -18,9 +18,9 @@ old = '''fun turnInstruction(command: TurnCommand, street: String?, exitNumber: 
         TurnCommand.KEEP_LEFT -> "Keep left"
         TurnCommand.KEEP_RIGHT -> "Keep right"
         TurnCommand.U_TURN -> "Make a U-turn"
-        TurnCommand.ROUNDABOUT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the \${ordinal(it)} exit" }
+        TurnCommand.ROUNDABOUT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the ${ordinal(it)} exit" }
             ?: "At the roundabout, go around and exit"
-        TurnCommand.ROUNDABOUT_LEFT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the \${ordinal(it)} exit" }
+        TurnCommand.ROUNDABOUT_LEFT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the ${ordinal(it)} exit" }
             ?: "At the roundabout, go around and exit left"
         TurnCommand.EXIT_LEFT -> "Take the exit on the left"
         TurnCommand.EXIT_RIGHT -> "Take the exit on the right"
@@ -43,7 +43,7 @@ new = '''fun turnInstruction(command: TurnCommand, street: String?, exitNumber: 
         TurnCommand.KEEP_RIGHT -> "Gardez la droite"
         TurnCommand.U_TURN -> "Faites demi-tour"
         TurnCommand.ROUNDABOUT, TurnCommand.ROUNDABOUT_LEFT ->
-            exitNumber?.takeIf { it > 0 }?.let { "Au rond-point, prenez la \${it}\${frenchOrdinal(it)} sortie" }
+            exitNumber?.takeIf { it > 0 }?.let { "Au rond-point, prenez la ${it}${frenchOrdinal(it)} sortie" }
                 ?: if (command == TurnCommand.ROUNDABOUT_LEFT) "Au rond-point, sortez à gauche" else "Au rond-point, prenez une sortie"
         TurnCommand.EXIT_LEFT -> "Prenez la sortie à gauche"
         TurnCommand.EXIT_RIGHT -> "Prenez la sortie à droite"
@@ -59,9 +59,9 @@ new = '''fun turnInstruction(command: TurnCommand, street: String?, exitNumber: 
         TurnCommand.KEEP_LEFT -> "Keep left"
         TurnCommand.KEEP_RIGHT -> "Keep right"
         TurnCommand.U_TURN -> "Make a U-turn"
-        TurnCommand.ROUNDABOUT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the \${ordinal(it)} exit" }
+        TurnCommand.ROUNDABOUT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the ${ordinal(it)} exit" }
             ?: "At the roundabout, go around and exit"
-        TurnCommand.ROUNDABOUT_LEFT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the \${ordinal(it)} exit" }
+        TurnCommand.ROUNDABOUT_LEFT -> exitNumber?.takeIf { it > 0 }?.let { "At the roundabout, take the ${ordinal(it)} exit" }
             ?: "At the roundabout, go around and exit left"
         TurnCommand.EXIT_LEFT -> "Take the exit on the left"
         TurnCommand.EXIT_RIGHT -> "Take the exit on the right"
