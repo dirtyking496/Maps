@@ -117,6 +117,24 @@ public class NavigationLocationService extends Service implements LocationListen
     }
 
     private void recalculateRoute(Location current, String destLat, String destLon) {
+        if (prefs.getBoolean("offline_route_mode", false)) {
+            try {
+                String raw = OfflineRouting.route(this, current.getLatitude(), current.getLongitude(),
+                        Double.parseDouble(destLat), Double.parseDouble(destLon));
+                JSONObject parsed = OfflineRouteParser.parse(raw);
+                prefs.edit().putString("offline_route_json", raw)
+                        .putString("maneuvers", parsed.getJSONArray("maneuvers").toString())
+                        .putString("route_coordinates", parsed.getJSONArray("route_coordinates").toString())
+                        .putInt("next_maneuver", 0)
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false).apply();
+                speak("Nouvel itinéraire hors ligne calculé. Reprenez la route.");
+            } catch (Exception ex) {
+                speak("Impossible de recalculer hors ligne. Vérifiez que la carte du Québec est installée.");
+            } finally {
+                rerouteInProgress = false;
+            }
+            return;
+        }
         try {
             String address = "https://router.project-osrm.org/route/v1/driving/"
                     + current.getLongitude() + "," + current.getLatitude() + ";"

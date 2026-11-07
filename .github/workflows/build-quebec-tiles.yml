@@ -1,0 +1,105 @@
+name: Build XIO GPS Quebec offline routing pack
+concurrency:
+  group: xio-quebec-map-pack-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/quebec-offline-navigation
+    paths:
+      - .github/workflows/build-quebec-tiles.yml
+  schedule:
+    - cron: "0 8 1 * *"
+
+permissions:
+  contents: read
+
+jobs:
+  build-quebec-routing-pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Free runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: false
+
+      - name: Download Quebec OpenStreetMap source
+        run: |
+          set -euo pipefail
+          wget --https-only --continue --show-progress \
+            https://download.geofabrik.de/north-america/canada/quebec-latest.osm.pbf \
+            -O quebec-latest.osm.pbf
+          ls -lh quebec-latest.osm.pbf
+          df -h
+
+      - name: Build Valhalla routing tiles and databases
+        run: |
+          set -euo pipefail
+          mkdir -p valhalla_tiles
+          docker pull ghcr.io/valhalla/valhalla-dev:3.9.0
+          docker run --rm \
+            -v "${{ github.workspace }}:/data" \
+            -w /data \
+            ghcr.io/valhalla/valhalla-dev:3.9.0 \
+            bash -lc '
+              set -euo pipefail
+              valhalla_build_config \
+                --mjolnir-tile-dir /data/valhalla_tiles \
+                --mjolnir-tile-extract /data/valhalla_tiles/valhalla_tiles.tar \
+                --mjolnir-timezone /data/valhalla_tiles/timezones.sqlite \
+                --mjolnir-admin /data/valhalla_tiles/admin.sqlite \
+                > /data/valhalla.json
+              valhalla_build_timezones > /data/valhalla_tiles/timezones.sqlite
+              valhalla_build_admins -c /data/valhalla.json /data/quebec-latest.osm.pbf
+              valhalla_build_tiles -c /data/valhalla.json /data/quebec-latest.osm.pbf
+              valhalla_build_extract -c /data/valhalla.json -v
+            '
+          test -s valhalla_tiles/valhalla_tiles.tar
+          test -s valhalla_tiles/admin.sqlite
+          test -s valhalla_tiles/timezones.sqlite
+          df -h
+
+      - name: Build Quebec offline vector map tiles
+        run: |
+          set -euo pipefail
+          docker pull ghcr.io/onthegomap/planetiler:latest
+          docker run --rm \
+            -e JAVA_TOOL_OPTIONS="-Xmx2g" \
+            -v "${{ github.workspace }}:/data" \
+            ghcr.io/onthegomap/planetiler:latest \
+            --osm-path=/data/quebec-latest.osm.pbf \
+            --download \
+            --output=/data/quebec.pmtiles \
+            --force \
+            --building-merge-z13=false \
+            --storage=mmap
+          test -s quebec.pmtiles
+          ls -lh quebec.pmtiles
+          df -h
+
+      - name: Package XIO GPS offline map data
+        run: |
+          set -euo pipefail
+          zip -0 -j xio-quebec-offline-pack.zip \
+            valhalla_tiles/valhalla_tiles.tar \
+            valhalla_tiles/admin.sqlite \
+            valhalla_tiles/timezones.sqlite \
+            quebec.pmtiles
+          unzip -t xio-quebec-offline-pack.zip
+          ls -lh xio-quebec-offline-pack.zip
+
+      - name: Upload Quebec offline map pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: XIO-GPS-Quebec-Offline-Map-Pack
+          path: xio-quebec-offline-pack.zip
+          if-no-files-found: error
+          retention-days: 30

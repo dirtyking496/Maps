@@ -3,9 +3,11 @@ package ca.xiogps.app;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
@@ -16,9 +18,24 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import org.maplibre.android.MapLibre;
+import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.geometry.LatLng;
+import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapView;
+import org.maplibre.android.annotations.Marker;
+import org.maplibre.android.annotations.MarkerOptions;
+import org.maplibre.android.annotations.Polyline;
+import org.maplibre.android.annotations.PolylineOptions;
+import org.maplibre.android.maps.Style;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URLEncoder;
@@ -28,21 +45,25 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** XIO GPS: live GPS, online route-step preparation, French speech, foreground GPS service.
- * Offline automotive routing is intentionally marked unavailable until a local road graph is integrated.
- */
+/** XIO GPS: live GPS, MapLibre maps, online routing, and local Valhalla offline routing. */
 public class MainActivity extends AppCompatActivity implements LocationListener {
     private static final int GPS_PERMISSION = 410;
     private LocationManager locationManager;
     private TextView status;
     private EditText destination;
     private Location lastLocation;
+    private MapView mapView;
+    private MapLibreMap map;
+    private boolean mapCenteredOnGps = false;
+    private Marker locationMarker;
+    private Polyline routeLine;
     private TextToSpeech voice;
     private boolean background = false;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        MapLibre.getInstance(this);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
         voice = new TextToSpeech(this, result -> { if (result == TextToSpeech.SUCCESS) voice.setLanguage(Locale.CANADA_FRENCH); });
         LinearLayout root = new LinearLayout(this);
@@ -55,8 +76,12 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         title.setTextColor(0xFF39D5FF); title.setTextSize(25); title.setGravity(Gravity.CENTER);
         root.addView(title);
 
+        mapView = new MapView(this);
+        mapView.onCreate(state);
+        root.addView(mapView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(270)));
         destination = new EditText(this);
-        destination.setSingleLine(true); destination.setHint("Destination : adresse ou ville");
+        destination.setSingleLine(true); destination.setHint("Adresse en ligne ou coordonnées lat,lon hors ligne");
         destination.setTextColor(0xFFFFFFFF); destination.setHintTextColor(0xFF9AAFC2);
         root.addView(destination);
 
@@ -82,15 +107,189 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         });
         root.addView(bg);
 
+        Button importMap = button("INSTALLER LE PAQUET DE CARTES DU QUÉBEC (.ZIP)");
+        importMap.setOnClickListener(v -> {
+            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            picker.addCategory(Intent.CATEGORY_OPENABLE);
+            picker.setType("*/*");
+            picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/zip", "application/octet-stream"});
+            startActivityForResult(picker, 412);
+        });
+        root.addView(importMap);
+
         Button offline = button("NAVIGATION HORS LIGNE");
-        offline.setOnClickListener(v -> status.setText("NON DISPONIBLE : le moteur automobile hors ligne et ses données routières locales restent à intégrer."));
+        offline.setOnClickListener(v -> calculateOfflineRoute());
         root.addView(offline);
 
         status = new TextView(this);
         status.setTextColor(0xFFFFFFFF); status.setText("État : prêt · active le GPS pour commencer");
         status.setPadding(0, 24, 0, 0); root.addView(status);
         setContentView(root);
+
+        mapView.getMapAsync(mapInstance -> {
+            map = mapInstance;
+            loadMapStyle();
+            map.setCameraPosition(new CameraPosition.Builder()
+                    .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
+            map.addOnMapClickListener(point -> {
+                destination.setText(String.format(Locale.US, "%.6f,%.6f",
+                        point.getLatitude(), point.getLongitude()));
+                status.setText("Destination choisie sur la carte · appuie sur NAVIGATION HORS LIGNE.");
+                return true;
+            });
+        });
+
     }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != 412 || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        status.setText("Installation du paquet de cartes Québec…");
+        network.execute(() -> {
+            File base = new File(getFilesDir(), "offline/quebec");
+            File staging = new File(base, "installing");
+            deleteRecursively(staging);
+            if (!staging.mkdirs()) {
+                runOnUiThread(() -> status.setText("Impossible de préparer l'installation."));
+                return;
+            }
+            try (InputStream raw = getContentResolver().openInputStream(uri);
+                 ZipInputStream zip = raw == null ? null : new ZipInputStream(raw)) {
+                if (zip == null) throw new Exception("Fichier inaccessible.");
+                byte[] buffer = new byte[1024 * 1024];
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (entry.isDirectory()) continue;
+                    String name = new File(entry.getName()).getName();
+                    if (!name.equals("valhalla_tiles.tar") && !name.equals("admin.sqlite")
+                            && !name.equals("timezones.sqlite") && !name.equals("quebec.pmtiles")) continue;
+                    File outputFile = new File(staging, name);
+                    try (FileOutputStream output = new FileOutputStream(outputFile)) {
+                        int count;
+                        while ((count = zip.read(buffer)) != -1) output.write(buffer, 0, count);
+                        output.getFD().sync();
+                    }
+                    zip.closeEntry();
+                }
+                File tiles = new File(staging, "valhalla_tiles.tar");
+                File admins = new File(staging, "admin.sqlite");
+                File zones = new File(staging, "timezones.sqlite");
+                File mapTiles = new File(staging, "quebec.pmtiles");
+                if (!tiles.isFile() || tiles.length() < 1024 * 1024
+                        || !admins.isFile() || admins.length() == 0
+                        || !zones.isFile() || zones.length() == 0
+                        || !mapTiles.isFile() || mapTiles.length() < 1024 * 1024) {
+                    throw new Exception("Le ZIP doit contenir les 4 fichiers : routage Valhalla, admin, fuseaux horaires et carte PMTiles.");
+                }
+                if (!base.exists() && !base.mkdirs()) throw new Exception("Dossier de cartes inaccessible.");
+                for (String name : new String[]{"valhalla_tiles.tar", "admin.sqlite", "timezones.sqlite", "quebec.pmtiles"}) {
+                    File old = new File(base, name);
+                    if (old.exists() && !old.delete()) throw new Exception("Impossible de remplacer " + name);
+                    if (!new File(staging, name).renameTo(old)) throw new Exception("Installation incomplète : " + name);
+                }
+                deleteRecursively(staging);
+                runOnUiThread(() -> {
+                    loadMapStyle();
+                    File installedTiles = new File(base, "valhalla_tiles.tar");
+                    File installedMap = new File(base, "quebec.pmtiles");
+                    status.setText(String.format(Locale.CANADA_FRENCH,
+                            "CARTES QUÉBEC INSTALLÉES · routage %.0f Mo · carte %.0f Mo",
+                            installedTiles.length() / 1048576.0, installedMap.length() / 1048576.0));
+                });
+            } catch (Exception ex) {
+                deleteRecursively(staging);
+                runOnUiThread(() -> status.setText("Échec d'installation : " + ex.getMessage()));
+            }
+        });
+    }
+
+    /** Loads the province-wide PMTiles archive when installed; otherwise uses the online preview. */
+    private void loadMapStyle() {
+        if (map == null) return;
+        if (routeLine != null) { map.removePolyline(routeLine); routeLine = null; }
+        if (locationMarker != null) { map.removeMarker(locationMarker); locationMarker = null; }
+        File localMap = new File(getFilesDir(), "offline/quebec/quebec.pmtiles");
+        if (!localMap.isFile() || localMap.length() < 1024 * 1024) {
+            map.setStyle("https://tiles.openfreemap.org/styles/liberty", style -> {
+                if (lastLocation != null) drawLocationMarker(lastLocation);
+                drawSavedRoute();
+            });
+            return;
+        }
+        String pmtilesUrl = "pmtiles://file://" + localMap.getAbsolutePath();
+        String styleJson = """
+                {
+                  "version": 8,
+                  "name": "XIO GPS Québec hors ligne",
+                  "sources": {
+                    "quebec": {
+                      "type": "vector",
+                      "url": __PMTILES_URL__,
+                      "attribution": "© OpenMapTiles © OpenStreetMap contributors"
+                    }
+                  },
+                  "layers": [
+                    {"id":"background","type":"background","paint":{"background-color":"#e9e5dc"}},
+                    {"id":"landcover","type":"fill","source":"quebec","source-layer":"landcover","paint":{"fill-color":"#dfe8d6","fill-opacity":0.9}},
+                    {"id":"water","type":"fill","source":"quebec","source-layer":"water","paint":{"fill-color":"#a9cfe5"}},
+                    {"id":"waterway","type":"line","source":"quebec","source-layer":"waterway","paint":{"line-color":"#8bbbd8","line-width":1.2}},
+                    {"id":"boundary","type":"line","source":"quebec","source-layer":"boundary","paint":{"line-color":"#9b9b91","line-width":1.0,"line-dasharray":[2,2]}},
+                    {"id":"roads","type":"line","source":"quebec","source-layer":"transportation","paint":{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.3,12,2.0,16,5.0]}},
+                    {"id":"major-roads","type":"line","source":"quebec","source-layer":"transportation","filter":["match",["get","class"],["motorway","trunk","primary"],true,false],"paint":{"line-color":"#f0a44b","line-width":["interpolate",["linear"],["zoom"],5,0.7,12,2.6,16,6.0]}},
+                    {"id":"buildings","type":"fill","source":"quebec","source-layer":"building","minzoom":13,"paint":{"fill-color":"#c9c2b5","fill-opacity":0.8}}
+                  ]
+                }
+                """.replace("__PMTILES_URL__", JSONObject.quote(pmtilesUrl));
+        map.setStyle(new Style.Builder().fromJson(styleJson), style -> {
+            if (lastLocation != null) drawLocationMarker(lastLocation);
+            drawSavedRoute();
+        });
+    }
+
+    private void drawLocationMarker(Location location) {
+        if (map == null || location == null) return;
+        LatLng point = new LatLng(location.getLatitude(), location.getLongitude());
+        if (locationMarker == null) {
+            locationMarker = map.addMarker(new MarkerOptions().position(point)
+                    .title("Votre position GPS"));
+        } else {
+            locationMarker.setPosition(point);
+            map.updateMarker(locationMarker);
+        }
+    }
+
+    private void drawSavedRoute() {
+        String raw = getSharedPreferences("xio_gps", MODE_PRIVATE)
+                .getString("route_coordinates", "");
+        if (raw == null || raw.isEmpty()) return;
+        try { drawRoute(new JSONArray(raw)); } catch (Exception ignored) { }
+    }
+
+    private void drawRoute(JSONArray coordinates) {
+        if (map == null || coordinates == null || coordinates.length() < 2) return;
+        try {
+            java.util.ArrayList<LatLng> points = new java.util.ArrayList<>();
+            for (int i = 0; i < coordinates.length(); i++) {
+                JSONArray pair = coordinates.getJSONArray(i);
+                points.add(new LatLng(pair.getDouble(1), pair.getDouble(0)));
+            }
+            if (routeLine != null) map.removePolyline(routeLine);
+            routeLine = map.addPolyline(new PolylineOptions().addAll(points)
+                    .color(Color.rgb(0, 190, 255)).width(6f));
+        } catch (Exception ignored) { }
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) for (File child : children) deleteRecursively(child);
+        }
+        file.delete();
+    }
+
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 
     private Button button(String label) {
         Button b = new Button(this); b.setText(label); b.setTextColor(0xFFFFFFFF);
@@ -110,6 +309,69 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             if (last != null) onLocationChanged(last);
             status.setText("Recherche du signal GPS…");
         } catch (SecurityException ex) { status.setText("Permission GPS manquante."); }
+    }
+
+    /** Calculates a route only with the Valhalla tiles already installed on this device. */
+    private void calculateOfflineRoute() {
+        if (lastLocation == null) {
+            status.setText("Active le GPS et attends ta position avant le calcul hors ligne.");
+            requestGps();
+            return;
+        }
+        String value = destination.getText().toString().trim();
+        String[] parts = value.split(",");
+        if (parts.length != 2) {
+            status.setText("HORS LIGNE : entre les coordonnées de destination au format latitude,longitude.");
+            return;
+        }
+        final double lat, lon;
+        try {
+            lat = Double.parseDouble(parts[0].trim());
+            lon = Double.parseDouble(parts[1].trim());
+            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) throw new NumberFormatException();
+        } catch (NumberFormatException ex) {
+            status.setText("Coordonnées invalides. Exemple : 48.45,-69.50 (latitude,longitude).");
+            return;
+        }
+        final double fromLat = lastLocation.getLatitude();
+        final double fromLon = lastLocation.getLongitude();
+        status.setText("Calcul local en cours · aucune connexion Internet utilisée…");
+        network.execute(() -> {
+            try {
+                String raw = OfflineRouting.route(this, fromLat, fromLon, lat, lon);
+                JSONObject parsed = OfflineRouteParser.parse(raw);
+                JSONObject summary = parsed.getJSONObject("summary");
+                double km = summary.optDouble("length", 0);
+                int minutes = (int)Math.round(summary.optDouble("time", 0) / 60.0);
+                getSharedPreferences("xio_gps", MODE_PRIVATE).edit()
+                        .putString("offline_route_json", raw)
+                        .putString("maneuvers", parsed.getJSONArray("maneuvers").toString())
+                        .putString("route_coordinates", parsed.getJSONArray("route_coordinates").toString())
+                        .putString("destination_lat", String.valueOf(lat))
+                        .putString("destination_lon", String.valueOf(lon))
+                        .putInt("next_maneuver", 0)
+                        .putLong("last_reroute_ms", 0L)
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false)
+                        .putBoolean("offline_route_mode", true)
+                        .putBoolean("offline_route_ready", true).apply();
+                runOnUiThread(() -> {
+                    status.setText(String.format(Locale.CANADA_FRENCH,
+                            "ITINÉRAIRE HORS LIGNE CALCULÉ · %.1f km · env. %d min · guidage vocal prêt",
+                            km, minutes));
+                    drawRoute(parsed.optJSONArray("route_coordinates"));
+                    speak("Itinéraire hors ligne calculé. " + Math.round(km) + " kilomètres. Le guidage vocal est activé.");
+                    if (!background) {
+                        Intent service = new Intent(this, NavigationLocationService.class)
+                                .setAction(NavigationLocationService.ACTION_START);
+                        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+                        else startService(service);
+                        background = true;
+                    }
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> status.setText("HORS LIGNE : " + ex.getMessage()));
+            }
+        });
     }
 
     private void calculateOnlineRoute() {
@@ -147,10 +409,12 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                         .putString("destination_lon", String.valueOf(destLon))
                         .putInt("next_maneuver", 0)
                         .putLong("last_reroute_ms", 0L)
-                        .putBoolean("announced_500", false).putBoolean("announced_80", false).apply();
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false)
+                        .putBoolean("offline_route_mode", false).apply();
                 double km = route.optDouble("distance") / 1000.0;
                 int minutes = (int)Math.round(route.optDouble("duration") / 60.0);
                 runOnUiThread(() -> {
+                    drawRoute(routeCoordinates);
                     status.setText(String.format(Locale.CANADA_FRENCH,
                             "Itinéraire en ligne prêt · %.1f km · env. %d min · %d étapes vocales", km, minutes, saved.length()));
                     speak("Itinéraire calculé. " + Math.round(km) + " kilomètres. Les instructions vocales sont prêtes.");
@@ -193,12 +457,40 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private void speak(String message) {
         if (voice != null) voice.speak(message, TextToSpeech.QUEUE_FLUSH, null, "xio-intro");
     }
-    @Override public void onLocationChanged(@NonNull Location location) { lastLocation = location; status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m", location.getLatitude(), location.getLongitude(), location.getAccuracy())); }
+    @Override public void onLocationChanged(@NonNull Location location) {
+        lastLocation = location;
+        status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m",
+                location.getLatitude(), location.getLongitude(), location.getAccuracy()));
+        if (map != null) {
+            drawLocationMarker(location);
+            if (!mapCenteredOnGps) {
+                map.setCameraPosition(new CameraPosition.Builder()
+                        .target(new LatLng(location.getLatitude(), location.getLongitude()))
+                        .zoom(14.0).build());
+                mapCenteredOnGps = true;
+            }
+        }
+    }
     @Override public void onRequestPermissionsResult(int request, @NonNull String[] permissions, @NonNull int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == GPS_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) requestGps();
     }
-    @Override protected void onDestroy() { network.shutdownNow(); if (locationManager != null) locationManager.removeUpdates(this); if (voice != null) { voice.stop(); voice.shutdown(); } super.onDestroy(); }
+    @Override protected void onStart() { super.onStart(); if (mapView != null) mapView.onStart(); }
+    @Override protected void onResume() { super.onResume(); if (mapView != null) mapView.onResume(); }
+    @Override protected void onPause() { if (mapView != null) mapView.onPause(); super.onPause(); }
+    @Override protected void onStop() { if (mapView != null) mapView.onStop(); super.onStop(); }
+    @Override public void onLowMemory() { super.onLowMemory(); if (mapView != null) mapView.onLowMemory(); }
+    @Override protected void onDestroy() {
+        network.shutdownNow();
+        if (locationManager != null) locationManager.removeUpdates(this);
+        if (voice != null) { voice.stop(); voice.shutdown(); }
+        if (mapView != null) mapView.onDestroy();
+        super.onDestroy();
+    }
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (mapView != null) mapView.onSaveInstanceState(outState);
+    }
     @Override public void onStatusChanged(String p, int s, Bundle b) {}
     @Override public void onProviderEnabled(@NonNull String p) {}
     @Override public void onProviderDisabled(@NonNull String p) {}
