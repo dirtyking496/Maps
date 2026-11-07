@@ -124,7 +124,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 double destLat = place.getDouble("lat"), destLon = place.getDouble("lon");
                 String routeUrl = "https://router.project-osrm.org/route/v1/driving/" +
                         lastLocation.getLongitude() + "," + lastLocation.getLatitude() + ";" + destLon + "," + destLat +
-                        "?overview=false&steps=true";
+                        "?overview=full&geometries=geojson&steps=true";
                 JSONObject routeRoot = new JSONObject(httpGet(routeUrl));
                 JSONObject route = routeRoot.getJSONArray("routes").getJSONObject(0);
                 JSONArray legs = route.getJSONArray("legs");
@@ -139,8 +139,14 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                     item.put("lat", loc.getDouble(1)); item.put("lon", loc.getDouble(0)); item.put("text", instruction);
                     saved.put(item);
                 }
+                JSONArray routeCoordinates = route.getJSONObject("geometry").getJSONArray("coordinates");
                 getSharedPreferences("xio_gps", MODE_PRIVATE).edit()
-                        .putString("maneuvers", saved.toString()).putInt("next_maneuver", 0)
+                        .putString("maneuvers", saved.toString())
+                        .putString("route_coordinates", routeCoordinates.toString())
+                        .putString("destination_lat", String.valueOf(destLat))
+                        .putString("destination_lon", String.valueOf(destLon))
+                        .putInt("next_maneuver", 0)
+                        .putLong("last_reroute_ms", 0L)
                         .putBoolean("announced_500", false).putBoolean("announced_80", false).apply();
                 double km = route.optDouble("distance") / 1000.0;
                 int minutes = (int)Math.round(route.optDouble("duration") / 60.0);
