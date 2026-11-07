@@ -3,6 +3,7 @@ package ca.xiogps.app;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -22,6 +23,10 @@ import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.maps.MapView;
+import org.maplibre.android.annotations.Marker;
+import org.maplibre.android.annotations.MarkerOptions;
+import org.maplibre.android.annotations.Polyline;
+import org.maplibre.android.annotations.PolylineOptions;
 import org.maplibre.android.maps.Style;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -52,6 +57,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private MapView mapView;
     private MapLibreMap map;
     private boolean mapCenteredOnGps = false;
+    private Marker locationMarker;
+    private Polyline routeLine;
     private TextToSpeech voice;
     private boolean background = false;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -201,7 +208,10 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         if (map == null) return;
         File localMap = new File(getFilesDir(), "offline/quebec/quebec.pmtiles");
         if (!localMap.isFile() || localMap.length() < 1024 * 1024) {
-            map.setStyle("https://tiles.openfreemap.org/styles/liberty");
+            map.setStyle("https://tiles.openfreemap.org/styles/liberty", style -> {
+                if (lastLocation != null) drawLocationMarker(lastLocation);
+                drawSavedRoute();
+            });
             return;
         }
         String pmtilesUrl = "pmtiles://file://" + localMap.getAbsolutePath();
@@ -228,7 +238,43 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                   ]
                 }
                 """.replace("__PMTILES_URL__", JSONObject.quote(pmtilesUrl));
-        map.setStyle(new Style.Builder().fromJson(styleJson));
+        map.setStyle(new Style.Builder().fromJson(styleJson), style -> {
+            if (lastLocation != null) drawLocationMarker(lastLocation);
+            drawSavedRoute();
+        });
+    }
+
+    private void drawLocationMarker(Location location) {
+        if (map == null || location == null) return;
+        LatLng point = new LatLng(location.getLatitude(), location.getLongitude());
+        if (locationMarker == null) {
+            locationMarker = map.addMarker(new MarkerOptions().position(point)
+                    .title("Votre position GPS"));
+        } else {
+            locationMarker.setPosition(point);
+            map.updateMarker(locationMarker);
+        }
+    }
+
+    private void drawSavedRoute() {
+        String raw = getSharedPreferences("xio_gps", MODE_PRIVATE)
+                .getString("route_coordinates", "");
+        if (raw == null || raw.isEmpty()) return;
+        try { drawRoute(new JSONArray(raw)); } catch (Exception ignored) { }
+    }
+
+    private void drawRoute(JSONArray coordinates) {
+        if (map == null || coordinates == null || coordinates.length() < 2) return;
+        try {
+            java.util.ArrayList<LatLng> points = new java.util.ArrayList<>();
+            for (int i = 0; i < coordinates.length(); i++) {
+                JSONArray pair = coordinates.getJSONArray(i);
+                points.add(new LatLng(pair.getDouble(1), pair.getDouble(0)));
+            }
+            if (routeLine != null) map.removePolyline(routeLine);
+            routeLine = map.addPolyline(new PolylineOptions().addAll(points)
+                    .color(Color.rgb(0, 190, 255)).width(6f));
+        } catch (Exception ignored) { }
     }
 
     private static void deleteRecursively(File file) {
@@ -309,6 +355,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                     status.setText(String.format(Locale.CANADA_FRENCH,
                             "ITINÉRAIRE HORS LIGNE CALCULÉ · %.1f km · env. %d min · guidage vocal prêt",
                             km, minutes));
+                    drawRoute(parsed.optJSONArray("route_coordinates"));
                     speak("Itinéraire hors ligne calculé. " + Math.round(km) + " kilomètres. Le guidage vocal est activé.");
                     if (!background) {
                         Intent service = new Intent(this, NavigationLocationService.class)
@@ -364,6 +411,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 double km = route.optDouble("distance") / 1000.0;
                 int minutes = (int)Math.round(route.optDouble("duration") / 60.0);
                 runOnUiThread(() -> {
+                    drawRoute(routeCoordinates);
                     status.setText(String.format(Locale.CANADA_FRENCH,
                             "Itinéraire en ligne prêt · %.1f km · env. %d min · %d étapes vocales", km, minutes, saved.length()));
                     speak("Itinéraire calculé. " + Math.round(km) + " kilomètres. Les instructions vocales sont prêtes.");
@@ -410,11 +458,14 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         lastLocation = location;
         status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m",
                 location.getLatitude(), location.getLongitude(), location.getAccuracy()));
-        if (map != null && !mapCenteredOnGps) {
-            map.setCameraPosition(new CameraPosition.Builder()
-                    .target(new LatLng(location.getLatitude(), location.getLongitude()))
-                    .zoom(14.0).build());
-            mapCenteredOnGps = true;
+        if (map != null) {
+            drawLocationMarker(location);
+            if (!mapCenteredOnGps) {
+                map.setCameraPosition(new CameraPosition.Builder()
+                        .target(new LatLng(location.getLatitude(), location.getLongitude()))
+                        .zoom(14.0).build());
+                mapCenteredOnGps = true;
+            }
         }
     }
     @Override public void onRequestPermissionsResult(int request, @NonNull String[] permissions, @NonNull int[] results) {
