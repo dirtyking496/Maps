@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
@@ -19,6 +20,9 @@ import androidx.core.app.ActivityCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URLEncoder;
@@ -82,6 +86,16 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         });
         root.addView(bg);
 
+        Button importMap = button("INSTALLER LA CARTE ROUTIÈRE DU QUÉBEC (.TAR)");
+        importMap.setOnClickListener(v -> {
+            Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            picker.addCategory(Intent.CATEGORY_OPENABLE);
+            picker.setType("*/*");
+            picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/x-tar", "application/octet-stream"});
+            startActivityForResult(picker, 412);
+        });
+        root.addView(importMap);
+
         Button offline = button("NAVIGATION HORS LIGNE");
         offline.setOnClickListener(v -> calculateOfflineRoute());
         root.addView(offline);
@@ -90,6 +104,39 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         status.setTextColor(0xFFFFFFFF); status.setText("État : prêt · active le GPS pour commencer");
         status.setPadding(0, 24, 0, 0); root.addView(status);
         setContentView(root);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != 412 || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        status.setText("Installation de la carte Valhalla… copie locale en cours.");
+        network.execute(() -> {
+            File directory = new File(getFilesDir(), "offline/quebec");
+            if (!directory.exists() && !directory.mkdirs()) {
+                runOnUiThread(() -> status.setText("Impossible de créer le dossier des cartes."));
+                return;
+            }
+            File temporary = new File(directory, "valhalla_tiles.tar.part");
+            File installed = new File(directory, "valhalla_tiles.tar");
+            try (InputStream input = getContentResolver().openInputStream(uri);
+                 FileOutputStream output = new FileOutputStream(temporary)) {
+                if (input == null) throw new Exception("Fichier inaccessible.");
+                byte[] buffer = new byte[1024 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                output.getFD().sync();
+                if (temporary.length() < 1024 * 1024) throw new Exception("Fichier trop petit : ce n'est probablement pas un paquet de tuiles Valhalla.");
+                if (installed.exists() && !installed.delete()) throw new Exception("Impossible de remplacer l'ancienne carte.");
+                if (!temporary.renameTo(installed)) throw new Exception("Impossible de finaliser l'installation de la carte.");
+                runOnUiThread(() -> status.setText(String.format(Locale.CANADA_FRENCH,
+                        "CARTE ROUTIÈRE IMPORTÉE · %.0f Mo · prête pour le calcul hors ligne",
+                        installed.length() / 1048576.0)));
+            } catch (Exception ex) {
+                temporary.delete();
+                runOnUiThread(() -> status.setText("Échec d'installation : " + ex.getMessage()));
+            }
+        });
     }
 
     private Button button(String label) {
