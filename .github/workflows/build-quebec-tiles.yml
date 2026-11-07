@@ -76,6 +76,7 @@ jobs:
             -v "${{ github.workspace }}:/data" \
             ghcr.io/onthegomap/planetiler:latest \
             --osm-path=/data/quebec-latest.osm.pbf \
+            --download \
             --output=/data/quebec.pmtiles \
             --force \
             --building-merge-z13=false \
