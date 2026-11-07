@@ -140,14 +140,20 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         network.execute(() -> {
             try {
                 String raw = OfflineRouting.route(this, fromLat, fromLon, lat, lon);
-                JSONObject result = new JSONObject(raw);
-                JSONObject trip = result.optJSONObject("trip");
-                JSONObject summary = trip == null ? null : trip.optJSONObject("summary");
-                if (summary == null) throw new Exception("Le moteur n'a pas retourné de résumé d'itinéraire.");
+                JSONObject parsed = OfflineRouteParser.parse(raw);
+                JSONObject summary = parsed.getJSONObject("summary");
                 double km = summary.optDouble("length", 0);
                 int minutes = (int)Math.round(summary.optDouble("time", 0) / 60.0);
                 getSharedPreferences("xio_gps", MODE_PRIVATE).edit()
                         .putString("offline_route_json", raw)
+                        .putString("maneuvers", parsed.getJSONArray("maneuvers").toString())
+                        .putString("route_coordinates", parsed.getJSONArray("route_coordinates").toString())
+                        .putString("destination_lat", String.valueOf(lat))
+                        .putString("destination_lon", String.valueOf(lon))
+                        .putInt("next_maneuver", 0)
+                        .putLong("last_reroute_ms", 0L)
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false)
+                        .putBoolean("offline_route_mode", true)
                         .putBoolean("offline_route_ready", true).apply();
                 runOnUiThread(() -> {
                     status.setText(String.format(Locale.CANADA_FRENCH,
