@@ -238,9 +238,16 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                         .putBoolean("offline_route_ready", true).apply();
                 runOnUiThread(() -> {
                     status.setText(String.format(Locale.CANADA_FRENCH,
-                            "ITINÉRAIRE HORS LIGNE CALCULÉ · %.1f km · env. %d min · moteur local Valhalla",
+                            "ITINÉRAIRE HORS LIGNE CALCULÉ · %.1f km · env. %d min · guidage vocal prêt",
                             km, minutes));
-                    speak("Itinéraire hors ligne calculé. " + Math.round(km) + " kilomètres.");
+                    speak("Itinéraire hors ligne calculé. " + Math.round(km) + " kilomètres. Le guidage vocal est activé.");
+                    if (!background) {
+                        Intent service = new Intent(this, NavigationLocationService.class)
+                                .setAction(NavigationLocationService.ACTION_START);
+                        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service);
+                        else startService(service);
+                        background = true;
+                    }
                 });
             } catch (Exception ex) {
                 runOnUiThread(() -> status.setText("HORS LIGNE : " + ex.getMessage()));
