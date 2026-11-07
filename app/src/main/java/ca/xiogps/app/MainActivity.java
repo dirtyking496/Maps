@@ -37,12 +37,14 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     private TextView status;
     private EditText destination;
     private Location lastLocation;
+    private TextToSpeech voice;
     private boolean background = false;
     private final ExecutorService network = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
+        voice = new TextToSpeech(this, result -> { if (result == TextToSpeech.SUCCESS) voice.setLanguage(Locale.CANADA_FRENCH); });
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(24, 32, 24, 24);
@@ -183,19 +185,14 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         return action + " sur " + road;
     }
     private void speak(String message) {
-        android.speech.tts.TextToSpeech t = new android.speech.tts.TextToSpeech(this, result -> {
-            if (result == android.speech.tts.TextToSpeech.SUCCESS) {
-                t.setLanguage(Locale.CANADA_FRENCH);
-                t.speak(message, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "xio-intro");
-            }
-        });
+        if (voice != null) voice.speak(message, TextToSpeech.QUEUE_FLUSH, null, "xio-intro");
     }
     @Override public void onLocationChanged(@NonNull Location location) { lastLocation = location; status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m", location.getLatitude(), location.getLongitude(), location.getAccuracy())); }
     @Override public void onRequestPermissionsResult(int request, @NonNull String[] permissions, @NonNull int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == GPS_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) requestGps();
     }
-    @Override protected void onDestroy() { network.shutdownNow(); if (locationManager != null) locationManager.removeUpdates(this); super.onDestroy(); }
+    @Override protected void onDestroy() { network.shutdownNow(); if (locationManager != null) locationManager.removeUpdates(this); if (voice != null) { voice.stop(); voice.shutdown(); } super.onDestroy(); }
     @Override public void onStatusChanged(String p, int s, Bundle b) {}
     @Override public void onProviderEnabled(@NonNull String p) {}
     @Override public void onProviderDisabled(@NonNull String p) {}
