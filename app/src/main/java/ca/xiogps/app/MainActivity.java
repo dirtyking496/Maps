@@ -16,77 +16,83 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URLEncoder;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/** First native XIO GPS screen. Online route engine and offline engine are separate milestones. */
+/** XIO GPS: live GPS, online route-step preparation, French speech, foreground GPS service.
+ * Offline automotive routing is intentionally marked unavailable until a local road graph is integrated.
+ */
 public class MainActivity extends AppCompatActivity implements LocationListener {
     private static final int GPS_PERMISSION = 410;
     private LocationManager locationManager;
     private TextView status;
-    private TextToSpeech voice;
+    private EditText destination;
     private Location lastLocation;
     private boolean background = false;
+    private final ExecutorService network = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         locationManager = (LocationManager)getSystemService(LOCATION_SERVICE);
-        voice = new TextToSpeech(this, result -> {
-            if (result == TextToSpeech.SUCCESS) voice.setLanguage(Locale.CANADA_FRENCH);
-        });
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(24, 32, 24, 24);
         root.setBackgroundColor(0xFF050B14);
+
         TextView title = new TextView(this);
         title.setText("XIO GPS  ·  GLOW NÉON");
-        title.setTextColor(0xFF39D5FF);
-        title.setTextSize(25);
-        title.setGravity(Gravity.CENTER);
+        title.setTextColor(0xFF39D5FF); title.setTextSize(25); title.setGravity(Gravity.CENTER);
         root.addView(title);
-        EditText destination = new EditText(this);
-        destination.setSingleLine(true);
-        destination.setHint("Destination");
-        destination.setTextColor(0xFFFFFFFF);
-        destination.setHintTextColor(0xFF9AAFC2);
+
+        destination = new EditText(this);
+        destination.setSingleLine(true); destination.setHint("Destination : adresse ou ville");
+        destination.setTextColor(0xFFFFFFFF); destination.setHintTextColor(0xFF9AAFC2);
         root.addView(destination);
+
         Button gps = button("ACTIVER LE GPS");
-        gps.setOnClickListener(v -> requestGps());
-        root.addView(gps);
-        Button voiceTest = button("TESTER LA VOIX FRANÇAISE");
-        voiceTest.setOnClickListener(v -> speak("XIO GPS est prêt. Bonne route."));
-        root.addView(voiceTest);
+        gps.setOnClickListener(v -> requestGps()); root.addView(gps);
+
+        Button route = button("CALCULER L'ITINÉRAIRE ET ACTIVER LES ÉTAPES VOCALES");
+        route.setOnClickListener(v -> calculateOnlineRoute()); root.addView(route);
+
         Button bg = button("DÉMARRER LE GPS EN ARRIÈRE-PLAN");
         bg.setOnClickListener(v -> {
             if (!background) {
                 if (!hasLocationPermission()) { requestGps(); return; }
                 Intent i = new Intent(this, NavigationLocationService.class).setAction(NavigationLocationService.ACTION_START);
                 if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
-                background = true;
-                bg.setText("ARRÊTER LE GPS EN ARRIÈRE-PLAN");
-                status.setText("GPS arrière-plan démarré · notification persistante");
+                background = true; bg.setText("ARRÊTER LE GPS EN ARRIÈRE-PLAN");
+                status.setText("GPS arrière-plan actif · annonces vocales si un itinéraire est chargé");
             } else {
                 startService(new Intent(this, NavigationLocationService.class).setAction(NavigationLocationService.ACTION_STOP));
-                background = false;
-                bg.setText("DÉMARRER LE GPS EN ARRIÈRE-PLAN");
+                background = false; bg.setText("DÉMARRER LE GPS EN ARRIÈRE-PLAN");
                 status.setText("GPS arrière-plan arrêté");
             }
         });
         root.addView(bg);
+
         Button offline = button("NAVIGATION HORS LIGNE");
-        offline.setOnClickListener(v -> status.setText("Moteur automobile hors ligne à intégrer : aucun itinéraire hors ligne n'est encore disponible."));
+        offline.setOnClickListener(v -> status.setText("NON DISPONIBLE : le moteur automobile hors ligne et ses données routières locales restent à intégrer."));
         root.addView(offline);
+
         status = new TextView(this);
-        status.setTextColor(0xFFFFFFFF);
-        status.setText("État : prêt · fonctions en développement");
-        status.setPadding(0, 24, 0, 0);
-        root.addView(status);
+        status.setTextColor(0xFFFFFFFF); status.setText("État : prêt · active le GPS pour commencer");
+        status.setPadding(0, 24, 0, 0); root.addView(status);
         setContentView(root);
     }
 
     private Button button(String label) {
         Button b = new Button(this); b.setText(label); b.setTextColor(0xFFFFFFFF);
-        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF102B41));
-        return b;
+        b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF102B41)); return b;
     }
     private boolean hasLocationPermission() {
         return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -94,28 +100,102 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     }
     private void requestGps() {
         if (!hasLocationPermission()) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, GPS_PERMISSION);
-            return;
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, GPS_PERMISSION); return;
         }
-        try { locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this); status.setText("Recherche du signal GPS…"); }
-        catch (SecurityException ex) { status.setText("Permission GPS manquante."); }
+        try {
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, this);
+            Location last = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (last != null) onLocationChanged(last);
+            status.setText("Recherche du signal GPS…");
+        } catch (SecurityException ex) { status.setText("Permission GPS manquante."); }
     }
-    @Override public void onLocationChanged(@NonNull Location location) {
-        lastLocation = location;
-        status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m", location.getLatitude(), location.getLongitude(), location.getAccuracy()));
+
+    private void calculateOnlineRoute() {
+        if (lastLocation == null) { status.setText("Active d'abord le GPS et attends ta position."); requestGps(); return; }
+        String query = destination.getText().toString().trim();
+        if (query.isEmpty()) { status.setText("Entre une destination."); return; }
+        status.setText("Recherche de la destination et calcul des étapes…");
+        network.execute(() -> {
+            try {
+                String q = URLEncoder.encode(query, "UTF-8");
+                JSONObject place = new JSONArray(httpGet("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=" + q)).getJSONObject(0);
+                double destLat = place.getDouble("lat"), destLon = place.getDouble("lon");
+                String routeUrl = "https://router.project-osrm.org/route/v1/driving/" +
+                        lastLocation.getLongitude() + "," + lastLocation.getLatitude() + ";" + destLon + "," + destLat +
+                        "?overview=false&steps=true";
+                JSONObject routeRoot = new JSONObject(httpGet(routeUrl));
+                JSONObject route = routeRoot.getJSONArray("routes").getJSONObject(0);
+                JSONArray legs = route.getJSONArray("legs");
+                JSONArray steps = legs.getJSONObject(0).getJSONArray("steps");
+                JSONArray saved = new JSONArray();
+                for (int i = 0; i < steps.length(); i++) {
+                    JSONObject step = steps.getJSONObject(i);
+                    JSONObject maneuver = step.getJSONObject("maneuver");
+                    JSONArray loc = maneuver.getJSONArray("location");
+                    String instruction = describe(maneuver.optString("type"), maneuver.optString("modifier"), step.optString("name"));
+                    JSONObject item = new JSONObject();
+                    item.put("lat", loc.getDouble(1)); item.put("lon", loc.getDouble(0)); item.put("text", instruction);
+                    saved.put(item);
+                }
+                getSharedPreferences("xio_gps", MODE_PRIVATE).edit()
+                        .putString("maneuvers", saved.toString()).putInt("next_maneuver", 0)
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false).apply();
+                double km = route.optDouble("distance") / 1000.0;
+                int minutes = (int)Math.round(route.optDouble("duration") / 60.0);
+                runOnUiThread(() -> {
+                    status.setText(String.format(Locale.CANADA_FRENCH,
+                            "Itinéraire en ligne prêt · %.1f km · env. %d min · %d étapes vocales", km, minutes, saved.length()));
+                    speak("Itinéraire calculé. " + Math.round(km) + " kilomètres. Les instructions vocales sont prêtes.");
+                    if (!background) {
+                        Intent i = new Intent(this, NavigationLocationService.class).setAction(NavigationLocationService.ACTION_START);
+                        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
+                        background = true;
+                    }
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> status.setText("Erreur de calcul en ligne : " + ex.getMessage()));
+            }
+        });
+    }
+
+    private String httpGet(String address) throws Exception {
+        HttpURLConnection c = (HttpURLConnection)new URL(address).openConnection();
+        c.setConnectTimeout(12000); c.setReadTimeout(18000);
+        c.setRequestProperty("User-Agent", "XIO-GPS-Android/0.2");
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder b = new StringBuilder(); String line; while ((line = r.readLine()) != null) b.append(line); return b.toString();
+        } finally { c.disconnect(); }
+    }
+    private String describe(String type, String modifier, String road) {
+        String action;
+        switch (modifier) {
+            case "left": action = "tournez à gauche"; break;
+            case "slight left": action = "prenez légèrement à gauche"; break;
+            case "sharp left": action = "tournez fortement à gauche"; break;
+            case "right": action = "tournez à droite"; break;
+            case "slight right": action = "prenez légèrement à droite"; break;
+            case "sharp right": action = "tournez fortement à droite"; break;
+            case "uturn": action = "faites demi-tour"; break;
+            case "straight": action = "continuez tout droit"; break;
+            default: action = type.equals("roundabout") ? "entrez dans le rond-point" : "continuez";
+        }
+        if (road == null || road.trim().isEmpty()) return action;
+        return action + " sur " + road;
     }
     private void speak(String message) {
-        if (voice != null) voice.speak(message, TextToSpeech.QUEUE_FLUSH, null, "xio-guidance");
+        android.speech.tts.TextToSpeech t = new android.speech.tts.TextToSpeech(this, result -> {
+            if (result == android.speech.tts.TextToSpeech.SUCCESS) {
+                t.setLanguage(Locale.CANADA_FRENCH);
+                t.speak(message, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "xio-intro");
+            }
+        });
     }
+    @Override public void onLocationChanged(@NonNull Location location) { lastLocation = location; status.setText(String.format(Locale.CANADA_FRENCH, "GPS : %.5f, %.5f · précision %.0f m", location.getLatitude(), location.getLongitude(), location.getAccuracy())); }
     @Override public void onRequestPermissionsResult(int request, @NonNull String[] permissions, @NonNull int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request == GPS_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) requestGps();
     }
-    @Override protected void onDestroy() {
-        if (locationManager != null) locationManager.removeUpdates(this);
-        if (voice != null) { voice.stop(); voice.shutdown(); }
-        super.onDestroy();
-    }
+    @Override protected void onDestroy() { network.shutdownNow(); if (locationManager != null) locationManager.removeUpdates(this); super.onDestroy(); }
     @Override public void onStatusChanged(String p, int s, Bundle b) {}
     @Override public void onProviderEnabled(@NonNull String p) {}
     @Override public void onProviderDisabled(@NonNull String p) {}
