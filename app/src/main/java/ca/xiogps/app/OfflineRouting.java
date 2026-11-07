@@ -7,19 +7,18 @@ import com.valhalla.config.models.ValhallaConfig;
 import java.io.File;
 import org.json.JSONObject;
 
-/** Local-only automobile routing against an installed Valhalla tile directory. */
+/** Local-only automobile routing against an installed Valhalla tile extract. */
 public final class OfflineRouting {
     private OfflineRouting() {}
 
     public static String route(Context context, double fromLat, double fromLon,
                                double toLat, double toLon) throws Exception {
-        File tileDir = new File(context.getFilesDir(), "offline/quebec/valhalla");
-        if (!containsFiles(tileDir)) {
-            throw new IllegalStateException("CARTES ABSENTES: le paquet routier Québec doit être installé dans "
-                    + tileDir.getAbsolutePath());
+        File tileExtract = new File(context.getFilesDir(), "offline/quebec/valhalla_tiles.tar");
+        if (!tileExtract.isFile() || tileExtract.length() < 1024 * 1024) {
+            throw new IllegalStateException("CARTE QUÉBEC ABSENTE : importe le fichier de données Valhalla (.tar) avant de calculer.");
         }
 
-        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.usingTilesDir(tileDir.getAbsolutePath(), null);
+        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.usingTileExtract(tileExtract.getAbsolutePath(), null);
         try (Valhalla engine = new Valhalla(context, config)) {
             JSONObject request = new JSONObject();
             org.json.JSONArray locations = new org.json.JSONArray();
@@ -35,14 +34,4 @@ public final class OfflineRouting {
         }
     }
 
-    private static boolean containsFiles(File directory) {
-        if (!directory.isDirectory()) return false;
-        File[] children = directory.listFiles();
-        if (children == null) return false;
-        for (File child : children) {
-            if (child.isFile() && child.length() > 0) return true;
-            if (child.isDirectory() && containsFiles(child)) return true;
-        }
-        return false;
-    }
 }
