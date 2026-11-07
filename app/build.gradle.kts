@@ -18,6 +18,8 @@ android {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core:1.17.0")
+    // MapLibre Native Android map renderer (BSD-2-Clause).
+    implementation("org.maplibre.gl:android-sdk:13.6.1")
     // Valhalla Mobile: native Android offline routing engine (MIT).
     implementation("io.github.rallista:valhalla-mobile:0.6.4")
     implementation("io.github.rallista:valhalla-models:0.6.0")
