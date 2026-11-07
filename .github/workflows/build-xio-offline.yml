@@ -49,7 +49,7 @@ jobs:
           sed -i 's/versionName = "0.1.0"/versionName = "1.0.0-beta1"/' app/build.gradle.kts
 
       - name: Apply XIO GPS French voice and test overlay
-        run: python3 tools/patch-atlas-xio.py atlas
+        run: python3 -u tools/patch-atlas-xio.py atlas
 
       - name: Run automated navigation regression tests
         working-directory: atlas
