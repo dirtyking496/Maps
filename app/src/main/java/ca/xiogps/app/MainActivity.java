@@ -45,9 +45,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** XIO GPS: live GPS, online route-step preparation, French speech, foreground GPS service.
- * Offline automotive routing is intentionally marked unavailable until a local road graph is integrated.
- */
+/** XIO GPS: live GPS, MapLibre maps, online routing, and local Valhalla offline routing. */
 public class MainActivity extends AppCompatActivity implements LocationListener {
     private static final int GPS_PERMISSION = 410;
     private LocationManager locationManager;
@@ -227,7 +225,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                     "quebec": {
                       "type": "vector",
                       "url": __PMTILES_URL__,
-                      "attribution": "© OpenStreetMap contributors"
+                      "attribution": "© OpenMapTiles © OpenStreetMap contributors"
                     }
                   },
                   "layers": [
