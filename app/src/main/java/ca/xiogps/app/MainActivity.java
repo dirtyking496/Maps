@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         root.addView(title);
 
         destination = new EditText(this);
-        destination.setSingleLine(true); destination.setHint("Destination : adresse ou ville");
+        destination.setSingleLine(true); destination.setHint("Adresse en ligne ou coordonnées lat,lon hors ligne");
         destination.setTextColor(0xFFFFFFFF); destination.setHintTextColor(0xFF9AAFC2);
         root.addView(destination);
 
@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         root.addView(bg);
 
         Button offline = button("NAVIGATION HORS LIGNE");
-        offline.setOnClickListener(v -> status.setText("NON DISPONIBLE : le moteur automobile hors ligne et ses données routières locales restent à intégrer."));
+        offline.setOnClickListener(v -> calculateOfflineRoute());
         root.addView(offline);
 
         status = new TextView(this);
@@ -110,6 +110,55 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             if (last != null) onLocationChanged(last);
             status.setText("Recherche du signal GPS…");
         } catch (SecurityException ex) { status.setText("Permission GPS manquante."); }
+    }
+
+    /** Calculates a route only with the Valhalla tiles already installed on this device. */
+    private void calculateOfflineRoute() {
+        if (lastLocation == null) {
+            status.setText("Active le GPS et attends ta position avant le calcul hors ligne.");
+            requestGps();
+            return;
+        }
+        String value = destination.getText().toString().trim();
+        String[] parts = value.split(",");
+        if (parts.length != 2) {
+            status.setText("HORS LIGNE : entre les coordonnées de destination au format latitude,longitude.");
+            return;
+        }
+        final double lat, lon;
+        try {
+            lat = Double.parseDouble(parts[0].trim());
+            lon = Double.parseDouble(parts[1].trim());
+            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) throw new NumberFormatException();
+        } catch (NumberFormatException ex) {
+            status.setText("Coordonnées invalides. Exemple : 48.45,-69.50 (latitude,longitude).");
+            return;
+        }
+        final double fromLat = lastLocation.getLatitude();
+        final double fromLon = lastLocation.getLongitude();
+        status.setText("Calcul local en cours · aucune connexion Internet utilisée…");
+        network.execute(() -> {
+            try {
+                String raw = OfflineRouting.route(this, fromLat, fromLon, lat, lon);
+                JSONObject result = new JSONObject(raw);
+                JSONObject trip = result.optJSONObject("trip");
+                JSONObject summary = trip == null ? null : trip.optJSONObject("summary");
+                if (summary == null) throw new Exception("Le moteur n'a pas retourné de résumé d'itinéraire.");
+                double km = summary.optDouble("length", 0);
+                int minutes = (int)Math.round(summary.optDouble("time", 0) / 60.0);
+                getSharedPreferences("xio_gps", MODE_PRIVATE).edit()
+                        .putString("offline_route_json", raw)
+                        .putBoolean("offline_route_ready", true).apply();
+                runOnUiThread(() -> {
+                    status.setText(String.format(Locale.CANADA_FRENCH,
+                            "ITINÉRAIRE HORS LIGNE CALCULÉ · %.1f km · env. %d min · moteur local Valhalla",
+                            km, minutes));
+                    speak("Itinéraire hors ligne calculé. " + Math.round(km) + " kilomètres.");
+                });
+            } catch (Exception ex) {
+                runOnUiThread(() -> status.setText("HORS LIGNE : " + ex.getMessage()));
+            }
+        });
     }
 
     private void calculateOnlineRoute() {
