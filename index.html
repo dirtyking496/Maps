@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07111f">
+<meta name="description" content="XIO GPS — projet de navigation automobile hors ligne pour Android.">
+<title>XIO GPS — Navigation hors ligne</title>
+<style>
+:root{color-scheme:dark;--bg:#07111f;--panel:#101f32;--line:#203751;--text:#f4f8ff;--muted:#a9bad0;--cyan:#40d9ff;--lime:#b5f36b}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:radial-gradient(ellipse at 75% 0%,#123c5b 0,transparent 38%),var(--bg);color:var(--text);line-height:1.6}
+.wrap{width:min(1100px,92%);margin:auto}.top{display:flex;align-items:center;justify-content:space-between;padding:22px 0}.brand{font-weight:900;letter-spacing:.12em;font-size:1.1rem}.brand span{color:var(--cyan)}.tag{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--lime);font-size:.82rem}
+.hero{padding:68px 0 52px;display:grid;grid-template-columns:1.15fr .85fr;gap:34px;align-items:center}.eyebrow{color:var(--cyan);font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:.78rem}h1{font-size:clamp(2.6rem,7vw,5rem);line-height:1.02;letter-spacing:-.055em;margin:14px 0 20px}.lead{font-size:1.15rem;color:var(--muted);max-width:650px}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}.btn{display:inline-block;text-decoration:none;padding:13px 18px;border-radius:12px;font-weight:800;background:var(--cyan);color:#04111b}.btn.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}.visual{min-height:330px;border:1px solid var(--line);border-radius:28px;background:linear-gradient(145deg,#122c45,#091522);display:grid;place-items:center;position:relative;overflow:hidden}.road{width:48%;height:390px;transform:rotate(28deg);border-left:5px dashed #d6e8f6;border-right:5px dashed #d6e8f6;background:#17283a;box-shadow:0 0 0 18px #0d1d2e}.pin{position:absolute;background:var(--cyan);color:#05131d;border-radius:16px;padding:13px 18px;font-weight:900;box-shadow:0 10px 35px #0008}.pin small{display:block;font-weight:600;opacity:.7}.section{padding:38px 0}.section h2{font-size:2rem;margin:0 0 18px;letter-spacing:-.03em}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:21px}.card h3{margin:8px 0}.card p{color:var(--muted);margin:0}.ico{font-size:1.6rem}.notice{border:1px solid #755d25;background:#2a2414;color:#f5e3b3;border-radius:16px;padding:18px}.notice strong{color:#fff1b8}.steps{color:var(--muted);padding-left:22px}.steps li{margin:9px 0}footer{border-top:1px solid var(--line);padding:25px 0;color:var(--muted);font-size:.9rem}
+@media(max-width:760px){.hero{grid-template-columns:1fr;padding-top:35px}.visual{min-height:250px}.grid{grid-template-columns:1fr}.top{gap:10px;align-items:flex-start}.tag{font-size:.72rem}}
+</style>
+</head>
+<body>
+<header class="wrap top"><div class="brand">XIO <span>GPS</span></div><div class="tag">Projet Android · Québec / Nouveau-Brunswick</div></header>
+<main class="wrap">
+<section class="hero">
+<div><div class="eyebrow">Prendre la route autrement</div><h1>Ta route.<br><span style="color:var(--cyan)">Même sans réseau.</span></h1><p class="lead">XIO GPS est un projet de navigation automobile hors ligne pour Android, pensé pour le guidage en français, le suivi GPS en arrière-plan et le recalcul d’itinéraire.</p>
+<div class="actions"><a class="btn" href="https://github.com/dirtyking496/Maps/actions" target="_blank" rel="noopener">Voir la compilation Android</a><a class="btn secondary" href="https://github.com/dirtyking496/Maps" target="_blank" rel="noopener">Voir le projet</a></div>
+</div>
+<div class="visual" aria-label="Illustration stylisée d'une route"><div class="road"></div><div class="pin">XIO GPS<small>Navigation hors ligne</small></div></div>
+</section>
+<section class="section"><h2>Fonctions du projet</h2><div class="grid">
+<article class="card"><div class="ico">🗺️</div><h3>Cartes hors ligne</h3><p>Architecture prévue pour importer des cartes régionales et les consulter sans connexion.</p></article>
+<article class="card"><div class="ico">🧭</div><h3>Guidage automobile</h3><p>Calcul d’itinéraire, suivi de progression GPS et recalcul lorsque tu quittes la route.</p></article>
+<article class="card"><div class="ico">🔊</div><h3>Voix personnalisables</h3><p>Guidage français, choix de voix selon celles installées sur Android, ton humoristique et effet extraterrestre.</p></article>
+</div></section>
+<section class="section"><h2>Avant le premier trajet</h2><div class="notice"><strong>Important :</strong> l’application ne contient pas encore de cartes routières complètes du Québec et du Nouveau-Brunswick. Il faut importer les archives cartographiques et les données de routage/search correspondantes avant de pouvoir calculer des trajets hors ligne. Les alertes de feux de circulation nécessitent aussi des données fiables dédiées; elles ne sont pas annoncées comme fonction active.</div>
+<ol class="steps"><li>Installer l’APK Android lorsqu’une version vérifiée sera publiée.</li><li>Télécharger les archives cartographiques de la région voulue.</li><li>Importer les cartes, puis les données de routage et de recherche dans les paramètres.</li><li>Tester le GPS et le guidage dans un endroit sécuritaire avant un vrai déplacement.</li></ol></section>
+<section class="section"><h2>État du développement</h2><div class="card"><p>La compilation Android et les tests automatisés sont suivis dans le dépôt GitHub. Cette page est une vitrine Web : elle ne remplace pas l’application Android et ne fournit pas à elle seule le GPS en arrière-plan ni le moteur de navigation hors ligne.</p></div></section>
+</main>
+<footer><div class="wrap">XIO GPS · Projet en développement · Cartographie OpenStreetMap et données sous leurs licences respectives.</div></footer>
+</body></html>

@@ -1,0 +1,70 @@
+name: Build XIO GPS offline Android app
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - integration-atlas-offline
+    paths:
+      - ".github/workflows/build-xio-offline.yml"
+      - "tools/patch-atlas-xio.py"
+      - "index.html"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout XIO GPS repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Atlas offline navigation engine
+        uses: actions/checkout@v4
+        with:
+          repository: Mobile-Artificial-Intelligence/atlas
+          ref: main
+          path: atlas
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK 37
+        run: |
+          sdkmanager --install "platforms;android-37.0" "build-tools;36.0.0"
+          yes | sdkmanager --licenses
+
+      - name: Brand application as XIO GPS
+        working-directory: atlas
+        run: |
+          sed -i 's/<string name="app_name">Atlas<\/string>/<string name="app_name">XIO GPS<\/string>/' app/src/main/res/values/strings.xml
+          sed -i 's/applicationId = "com.danemadsen.atlas"/applicationId = "ca.xiogps.app"/' app/build.gradle.kts
+          sed -i 's/versionName = "0.1.0"/versionName = "1.0.0-beta1"/' app/build.gradle.kts
+
+      - name: Apply XIO GPS French voice and test overlay
+        run: python3 -u tools/patch-atlas-xio.py atlas && test -f atlas/app/src/test/kotlin/com/danemadsen/atlas/nav/XioAutomaticNavigationSessionTest.kt
+
+      - name: Run automated navigation regression tests
+        working-directory: atlas
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      - name: Build debug APK
+        working-directory: atlas
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: Publish APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XIO-GPS-offline-debug
+          path: atlas/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
