@@ -195,8 +195,8 @@ progress = root / "app/src/main/kotlin/com/danemadsen/atlas/nav/navigation-progr
 pt = progress.read_text(encoding="utf-8")
 pt = pt.replace('announcements.add("You have arrived.")',
     'announcements.add(if (java.util.Locale.getDefault().language == "fr") "Vous êtes arrivé à destination." else "You have arrived.")')
-old_prefix = 'return if (atMeters > 0) "In \${spokenDistance(atMeters)}, $instruction" else instruction'
-new_prefix = 'return if (atMeters > 0) { if (java.util.Locale.getDefault().language == "fr") "Dans \${spokenDistance(atMeters)}, $instruction" else "In \${spokenDistance(atMeters)}, $instruction" } else instruction'
+old_prefix = 'return if (atMeters > 0) "In ${spokenDistance(atMeters)}, $instruction" else instruction'
+new_prefix = 'return if (atMeters > 0) { if (java.util.Locale.getDefault().language == "fr") "Dans ${spokenDistance(atMeters)}, $instruction" else "In ${spokenDistance(atMeters)}, $instruction" } else instruction'
 if old_prefix not in pt:
     raise SystemExit("announcementFor source did not match; refusing a risky patch")
 progress.write_text(pt.replace(old_prefix, new_prefix), encoding="utf-8")
