@@ -44,11 +44,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p valhalla_tiles
-          docker pull ghcr.io/valhalla/valhalla:3.6.3
+          docker pull ghcr.io/valhalla/valhalla-dev:3.9.0
           docker run --rm \
             -v "${{ github.workspace }}:/data" \
             -w /data \
-            ghcr.io/valhalla/valhalla:3.6.3 \
+            ghcr.io/valhalla/valhalla-dev:3.9.0 \
             bash -lc '
               set -euo pipefail
               valhalla_build_config \
