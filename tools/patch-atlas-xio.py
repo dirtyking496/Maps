@@ -211,3 +211,93 @@ service.write_text(st.replace('speaker.speak("Recalculating.")',
     'speaker.speak(if (java.util.Locale.getDefault().language == "fr") "Recalcul de l’itinéraire." else "Recalculating.")'), encoding="utf-8")
 
 print("XIO GPS French voice overlay and deterministic auto-session tests installed.")
+
+
+# XIO GPS voice controls: gender preference, playful mode, and alien effect.
+tts = root / "app/src/main/kotlin/com/danemadsen/atlas/nav/tts-speaker.kt"
+tt = tts.read_text(encoding="utf-8")
+tt = tt.replace("import java.util.concurrent.atomic.AtomicBoolean", "import java.util.concurrent.atomic.AtomicBoolean\nimport java.util.Locale")
+old_speak = """    fun speak(text: String) {
+        if (muted || !ready.get()) return
+        // The plain Locale constructor falls back to the engine default,
+        // which matches the device language the instructions are not
+        // translated against anyway (they are English-only for now).
+        runCatching { tts.setSpeechRate(1.0f) }
+        runCatching { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "atlas-nav-$announce_seq") }
+        announce_seq++
+    }"""
+new_speak = """    fun speak(text: String) {
+        if (muted || !ready.get()) return
+        val prefs = context.applicationContext.getSharedPreferences("xio_voice_preferences", Context.MODE_PRIVATE)
+        val gender = prefs.getString("gender", "auto") ?: "auto"
+        val style = prefs.getString("style", "classic") ?: "classic"
+        runCatching {
+            val preferredLocale = if (Locale.getDefault().language == "fr") Locale.CANADA_FRENCH else Locale.getDefault()
+            tts.setLanguage(preferredLocale)
+            val voices = tts.voices.orEmpty().filter { it.locale.language == preferredLocale.language }
+            val wanted = when (gender) {
+                "female" -> voices.firstOrNull { v -> listOf("female", "feminine", "woman", "femme").any { v.name.lowercase().contains(it) } }
+                "male" -> voices.firstOrNull { v -> listOf("male", "masculine", "man", "homme").any { v.name.lowercase().contains(it) } }
+                else -> null
+            }
+            if (wanted != null && tts.voice?.name != wanted.name) tts.voice = wanted
+        }
+        val spoken = when (style) {
+            "funny" -> if (text.startsWith("Hé, pilote")) text else "Hé, pilote! $text"
+            "alien" -> if (text.startsWith("Bip-boup")) text else "Bip-boup, humain! $text"
+            else -> text
+        }
+        runCatching { tts.setPitch(if (style == "alien") 1.42f else 1.0f) }
+        runCatching { tts.setSpeechRate(if (style == "alien") 0.86f else 1.0f) }
+        runCatching { tts.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "atlas-nav-$announce_seq") }
+        announce_seq++
+    }"""
+if old_speak not in tt:
+    raise SystemExit("TtsSpeaker.speak source did not match; refusing voice patch")
+tt = tt.replace(old_speak, new_speak)
+tts.write_text(tt, encoding="utf-8")
+
+settings = root / "app/src/main/kotlin/com/danemadsen/atlas/ui/settings/settings-screen.kt"
+ss = settings.read_text(encoding="utf-8")
+anchor = '                    SettingsSectionLabel("Voice guidance")'
+controls = '''                    SettingsSectionLabel("XIO GPS voice")
+                    val xioVoicePrefs = remember(context) {
+                        context.getSharedPreferences("xio_voice_preferences", Context.MODE_PRIVATE)
+                    }
+                    var xioGender by remember { mutableStateOf(xioVoicePrefs.getString("gender", "auto") ?: "auto") }
+                    var xioStyle by remember { mutableStateOf(xioVoicePrefs.getString("style", "classic") ?: "classic") }
+                    Text("Voice", style = MaterialTheme.typography.bodyMedium)
+                    Row {
+                        FilterChip(selected = xioGender == "auto", onClick = {
+                            xioGender = "auto"; xioVoicePrefs.edit().putString("gender", xioGender).apply()
+                        }, label = { Text("Automatic") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = xioGender == "female", onClick = {
+                            xioGender = "female"; xioVoicePrefs.edit().putString("gender", xioGender).apply()
+                        }, label = { Text("Female") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = xioGender == "male", onClick = {
+                            xioGender = "male"; xioVoicePrefs.edit().putString("gender", xioGender).apply()
+                        }, label = { Text("Male") })
+                    }
+                    Text("Voice effect", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                    Row {
+                        FilterChip(selected = xioStyle == "classic", onClick = {
+                            xioStyle = "classic"; xioVoicePrefs.edit().putString("style", xioStyle).apply()
+                        }, label = { Text("Classic") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = xioStyle == "funny", onClick = {
+                            xioStyle = "funny"; xioVoicePrefs.edit().putString("style", xioStyle).apply()
+                        }, label = { Text("Funny") }, modifier = Modifier.padding(end = 6.dp))
+                        FilterChip(selected = xioStyle == "alien", onClick = {
+                            xioStyle = "alien"; xioVoicePrefs.edit().putString("style", xioStyle).apply()
+                        }, label = { Text("Alien 👽") })
+                    }
+                    Text(
+                        "Available male/female voices depend on the speech voices installed on your Android phone. Alien mode changes pitch and speed; funny mode adds playful phrases.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+'''
+if anchor not in ss:
+    raise SystemExit("Voice guidance settings anchor did not match; refusing UI patch")
+settings.write_text(ss.replace(anchor, controls + anchor), encoding="utf-8")
+print("Patched XIO voice preferences and UI.")
