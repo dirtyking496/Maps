@@ -4,6 +4,8 @@ import android.content.Context;
 import com.valhalla.valhalla.Valhalla;
 import com.valhalla.valhalla.config.ValhallaConfigFactory;
 import com.valhalla.config.models.ValhallaConfig;
+import com.squareup.moshi.Moshi;
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory;
 import java.io.File;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
@@ -44,7 +46,8 @@ public final class OfflineRouting {
                         org.json.JSONObject.quote(adminDb.getAbsolutePath()))
                 .replace(quote + "/data/valhalla/tz_world.sqlite" + quote,
                         org.json.JSONObject.quote(timezoneDb.getAbsolutePath()));
-        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.fromJson(configJson);
+        ValhallaConfig config = ValhallaConfigFactory.INSTANCE.fromJson(configJson,
+                new Moshi.Builder().add(new KotlinJsonAdapterFactory()).build());
         try (Valhalla engine = new Valhalla(context, config)) {
             JSONObject request = new JSONObject();
             org.json.JSONArray locations = new org.json.JSONArray();
