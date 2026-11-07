@@ -1,4 +1,7 @@
 name: Build XIO GPS Quebec offline routing pack
+concurrency:
+  group: xio-quebec-map-pack-${{ github.ref }}
+  cancel-in-progress: true
 
 on:
   workflow_dispatch:
