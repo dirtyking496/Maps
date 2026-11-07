@@ -22,6 +22,7 @@ import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.geometry.LatLng;
 import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.maps.MapView;
+import org.maplibre.android.maps.Style;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.BufferedReader;
@@ -76,7 +77,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(270)));
         mapView.getMapAsync(mapInstance -> {
             map = mapInstance;
-            map.setStyle("https://tiles.openfreemap.org/styles/liberty");
+            loadMapStyle();
             map.setCameraPosition(new CameraPosition.Builder()
                     .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
             map.addOnMapClickListener(point -> {
@@ -156,7 +157,7 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                     if (entry.isDirectory()) continue;
                     String name = new File(entry.getName()).getName();
                     if (!name.equals("valhalla_tiles.tar") && !name.equals("admin.sqlite")
-                            && !name.equals("timezones.sqlite")) continue;
+                            && !name.equals("timezones.sqlite") && !name.equals("quebec.pmtiles")) continue;
                     File outputFile = new File(staging, name);
                     try (FileOutputStream output = new FileOutputStream(outputFile)) {
                         int count;
@@ -168,26 +169,66 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 File tiles = new File(staging, "valhalla_tiles.tar");
                 File admins = new File(staging, "admin.sqlite");
                 File zones = new File(staging, "timezones.sqlite");
+                File mapTiles = new File(staging, "quebec.pmtiles");
                 if (!tiles.isFile() || tiles.length() < 1024 * 1024
                         || !admins.isFile() || admins.length() == 0
-                        || !zones.isFile() || zones.length() == 0) {
-                    throw new Exception("Le ZIP doit contenir valhalla_tiles.tar, admin.sqlite et timezones.sqlite.");
+                        || !zones.isFile() || zones.length() == 0
+                        || !mapTiles.isFile() || mapTiles.length() < 1024 * 1024) {
+                    throw new Exception("Le ZIP doit contenir les 4 fichiers : routage Valhalla, admin, fuseaux horaires et carte PMTiles.");
                 }
                 if (!base.exists() && !base.mkdirs()) throw new Exception("Dossier de cartes inaccessible.");
-                for (String name : new String[]{"valhalla_tiles.tar", "admin.sqlite", "timezones.sqlite"}) {
+                for (String name : new String[]{"valhalla_tiles.tar", "admin.sqlite", "timezones.sqlite", "quebec.pmtiles"}) {
                     File old = new File(base, name);
                     if (old.exists() && !old.delete()) throw new Exception("Impossible de remplacer " + name);
                     if (!new File(staging, name).renameTo(old)) throw new Exception("Installation incomplète : " + name);
                 }
                 deleteRecursively(staging);
-                runOnUiThread(() -> status.setText(String.format(Locale.CANADA_FRENCH,
-                        "PAQUET QUÉBEC INSTALLÉ · %.0f Mo · moteur hors ligne prêt",
-                        tiles.length() / 1048576.0)));
+                runOnUiThread(() -> {
+                    loadMapStyle();
+                    status.setText(String.format(Locale.CANADA_FRENCH,
+                            "CARTES QUÉBEC INSTALLÉES · routage %.0f Mo · carte %.0f Mo",
+                            tiles.length() / 1048576.0, mapTiles.length() / 1048576.0));
+                });
             } catch (Exception ex) {
                 deleteRecursively(staging);
                 runOnUiThread(() -> status.setText("Échec d'installation : " + ex.getMessage()));
             }
         });
+    }
+
+    /** Loads the province-wide PMTiles archive when installed; otherwise uses the online preview. */
+    private void loadMapStyle() {
+        if (map == null) return;
+        File localMap = new File(getFilesDir(), "offline/quebec/quebec.pmtiles");
+        if (!localMap.isFile() || localMap.length() < 1024 * 1024) {
+            map.setStyle("https://tiles.openfreemap.org/styles/liberty");
+            return;
+        }
+        String pmtilesUrl = "pmtiles://file://" + localMap.getAbsolutePath();
+        String styleJson = """
+                {
+                  "version": 8,
+                  "name": "XIO GPS Québec hors ligne",
+                  "sources": {
+                    "quebec": {
+                      "type": "vector",
+                      "url": __PMTILES_URL__,
+                      "attribution": "© OpenStreetMap contributors"
+                    }
+                  },
+                  "layers": [
+                    {"id":"background","type":"background","paint":{"background-color":"#e9e5dc"}},
+                    {"id":"landcover","type":"fill","source":"quebec","source-layer":"landcover","paint":{"fill-color":"#dfe8d6","fill-opacity":0.9}},
+                    {"id":"water","type":"fill","source":"quebec","source-layer":"water","paint":{"fill-color":"#a9cfe5"}},
+                    {"id":"waterway","type":"line","source":"quebec","source-layer":"waterway","paint":{"line-color":"#8bbbd8","line-width":1.2}},
+                    {"id":"boundary","type":"line","source":"quebec","source-layer":"boundary","paint":{"line-color":"#9b9b91","line-width":1.0,"line-dasharray":[2,2]}},
+                    {"id":"roads","type":"line","source":"quebec","source-layer":"transportation","paint":{"line-color":"#ffffff","line-width":["interpolate",["linear"],["zoom"],5,0.3,12,2.0,16,5.0]}},
+                    {"id":"major-roads","type":"line","source":"quebec","source-layer":"transportation","filter":["match",["get","class"],["motorway","trunk","primary"],true,false],"paint":{"line-color":"#f0a44b","line-width":["interpolate",["linear"],["zoom"],5,0.7,12,2.6,16,6.0]}},
+                    {"id":"buildings","type":"fill","source":"quebec","source-layer":"building","minzoom":13,"paint":{"fill-color":"#c9c2b5","fill-opacity":0.8}}
+                  ]
+                }
+                """.replace("__PMTILES_URL__", JSONObject.quote(pmtilesUrl));
+        map.setStyle(new Style.Builder().fromJson(styleJson));
     }
 
     private static void deleteRecursively(File file) {
