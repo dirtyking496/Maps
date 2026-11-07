@@ -79,6 +79,12 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
             map.setStyle("https://tiles.openfreemap.org/styles/liberty");
             map.setCameraPosition(new CameraPosition.Builder()
                     .target(new LatLng(46.8, -71.2)).zoom(5.2).build());
+            map.addOnMapClickListener(point -> {
+                destination.setText(String.format(Locale.US, "%.6f,%.6f",
+                        point.getLatitude(), point.getLongitude()));
+                status.setText("Destination choisie sur la carte · appuie sur NAVIGATION HORS LIGNE.");
+                return true;
+            });
         });
 
         destination = new EditText(this);
