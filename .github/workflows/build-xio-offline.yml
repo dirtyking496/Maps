@@ -48,6 +48,13 @@ jobs:
           sed -i 's/applicationId = "com.danemadsen.atlas"/applicationId = "ca.xiogps.app"/' app/build.gradle.kts
           sed -i 's/versionName = "0.1.0"/versionName = "1.0.0-beta1"/' app/build.gradle.kts
 
+      - name: Apply XIO GPS French voice and test overlay
+        run: python3 tools/patch-atlas-xio.py atlas
+
+      - name: Run automated navigation regression tests
+        working-directory: atlas
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
       - name: Build debug APK
         working-directory: atlas
         run: ./gradlew --no-daemon :app:assembleDebug
