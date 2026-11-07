@@ -11,11 +11,15 @@ android {
         versionName = "0.1.0"
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 }
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.core:core:1.17.0")
+    // Valhalla Mobile: native Android offline routing engine (MIT).
+    implementation("io.github.rallista:valhalla-mobile:0.6.4")
+    implementation("io.github.rallista:valhalla-models:0.6.0")
+    implementation("io.github.rallista:valhalla-models-config:0.6.0")
 }
