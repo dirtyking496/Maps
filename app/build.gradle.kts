@@ -24,4 +24,5 @@ dependencies {
     implementation("io.github.rallista:valhalla-mobile:0.6.4")
     implementation("io.github.rallista:valhalla-models:0.6.0")
     implementation("io.github.rallista:valhalla-models-config:0.6.0")
+    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
 }
