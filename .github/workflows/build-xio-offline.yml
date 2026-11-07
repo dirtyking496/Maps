@@ -6,7 +6,7 @@ on:
     branches:
       - integration-atlas-offline
     paths:
-      - ".github/workflows/build-xio-offline.yml"
+      - ".github/workflows/build-xio-offline.yml"\n      - "tools/patch-atlas-xio.py"\n      - "index.html"
 
 permissions:
   contents: read
