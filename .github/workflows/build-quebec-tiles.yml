@@ -87,7 +87,8 @@ jobs:
           zip -0 -j xio-quebec-offline-pack.zip \
             valhalla_tiles/valhalla_tiles.tar \
             valhalla_tiles/admin.sqlite \
-            valhalla_tiles/timezones.sqlite
+            valhalla_tiles/timezones.sqlite \\
+            quebec.pmtiles
           unzip -t xio-quebec-offline-pack.zip
           ls -lh xio-quebec-offline-pack.zip
 
