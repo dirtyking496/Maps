@@ -216,7 +216,9 @@ print("XIO GPS French voice overlay and deterministic auto-session tests install
 # XIO GPS voice controls: gender preference, playful mode, and alien effect.
 tts = root / "app/src/main/kotlin/com/danemadsen/atlas/nav/tts-speaker.kt"
 tt = tts.read_text(encoding="utf-8")
-tt = tt.replace("class TtsSpeaker(context: Context) {", "class TtsSpeaker(context: Context) {\n    private val appContext = context.applicationContext")\ntt = tt.replace("context.applicationContext.getSharedPreferences", "appContext.getSharedPreferences")\ntt = tt.replace("import java.util.concurrent.atomic.AtomicBoolean", "import java.util.concurrent.atomic.AtomicBoolean\nimport java.util.Locale")
+tt = tt.replace("class TtsSpeaker(context: Context) {", "class TtsSpeaker(context: Context) {\\n    private val appContext = context.applicationContext")
+tt = tt.replace("context.applicationContext.getSharedPreferences", "appContext.getSharedPreferences")
+tt = tt.replace("import java.util.concurrent.atomic.AtomicBoolean", "import java.util.concurrent.atomic.AtomicBoolean\\nimport java.util.Locale")
 old_speak = """    fun speak(text: String) {
         if (muted || !ready.get()) return
         // The plain Locale constructor falls back to the engine default,
@@ -228,7 +230,7 @@ old_speak = """    fun speak(text: String) {
     }"""
 new_speak = """    fun speak(text: String) {
         if (muted || !ready.get()) return
-        val prefs = context.applicationContext.getSharedPreferences("xio_voice_preferences", Context.MODE_PRIVATE)
+        val prefs = appContext.getSharedPreferences("xio_voice_preferences", Context.MODE_PRIVATE)
         val gender = prefs.getString("gender", "auto") ?: "auto"
         val style = prefs.getString("style", "classic") ?: "classic"
         runCatching {
