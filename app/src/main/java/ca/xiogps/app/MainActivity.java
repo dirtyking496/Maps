@@ -23,6 +23,8 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URLEncoder;
@@ -86,12 +88,12 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         });
         root.addView(bg);
 
-        Button importMap = button("INSTALLER LA CARTE ROUTIÈRE DU QUÉBEC (.TAR)");
+        Button importMap = button("INSTALLER LE PAQUET DE CARTES DU QUÉBEC (.ZIP)");
         importMap.setOnClickListener(v -> {
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
             picker.addCategory(Intent.CATEGORY_OPENABLE);
             picker.setType("*/*");
-            picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/x-tar", "application/octet-stream"});
+            picker.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/zip", "application/octet-stream"});
             startActivityForResult(picker, 412);
         });
         root.addView(importMap);
@@ -110,33 +112,65 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != 412 || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
-        status.setText("Installation de la carte Valhalla… copie locale en cours.");
+        status.setText("Installation du paquet de cartes Québec…");
         network.execute(() -> {
-            File directory = new File(getFilesDir(), "offline/quebec");
-            if (!directory.exists() && !directory.mkdirs()) {
-                runOnUiThread(() -> status.setText("Impossible de créer le dossier des cartes."));
+            File base = new File(getFilesDir(), "offline/quebec");
+            File staging = new File(base, "installing");
+            deleteRecursively(staging);
+            if (!staging.mkdirs()) {
+                runOnUiThread(() -> status.setText("Impossible de préparer l'installation."));
                 return;
             }
-            File temporary = new File(directory, "valhalla_tiles.tar.part");
-            File installed = new File(directory, "valhalla_tiles.tar");
-            try (InputStream input = getContentResolver().openInputStream(uri);
-                 FileOutputStream output = new FileOutputStream(temporary)) {
-                if (input == null) throw new Exception("Fichier inaccessible.");
+            try (InputStream raw = getContentResolver().openInputStream(uri);
+                 ZipInputStream zip = raw == null ? null : new ZipInputStream(raw)) {
+                if (zip == null) throw new Exception("Fichier inaccessible.");
                 byte[] buffer = new byte[1024 * 1024];
-                int count;
-                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                output.getFD().sync();
-                if (temporary.length() < 1024 * 1024) throw new Exception("Fichier trop petit : ce n'est probablement pas un paquet de tuiles Valhalla.");
-                if (installed.exists() && !installed.delete()) throw new Exception("Impossible de remplacer l'ancienne carte.");
-                if (!temporary.renameTo(installed)) throw new Exception("Impossible de finaliser l'installation de la carte.");
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (entry.isDirectory()) continue;
+                    String name = new File(entry.getName()).getName();
+                    if (!name.equals("valhalla_tiles.tar") && !name.equals("admin.sqlite")
+                            && !name.equals("timezones.sqlite")) continue;
+                    File outputFile = new File(staging, name);
+                    try (FileOutputStream output = new FileOutputStream(outputFile)) {
+                        int count;
+                        while ((count = zip.read(buffer)) != -1) output.write(buffer, 0, count);
+                        output.getFD().sync();
+                    }
+                    zip.closeEntry();
+                }
+                File tiles = new File(staging, "valhalla_tiles.tar");
+                File admins = new File(staging, "admin.sqlite");
+                File zones = new File(staging, "timezones.sqlite");
+                if (!tiles.isFile() || tiles.length() < 1024 * 1024
+                        || !admins.isFile() || admins.length() == 0
+                        || !zones.isFile() || zones.length() == 0) {
+                    throw new Exception("Le ZIP doit contenir valhalla_tiles.tar, admin.sqlite et timezones.sqlite.");
+                }
+                if (!base.exists() && !base.mkdirs()) throw new Exception("Dossier de cartes inaccessible.");
+                for (String name : new String[]{"valhalla_tiles.tar", "admin.sqlite", "timezones.sqlite"}) {
+                    File old = new File(base, name);
+                    if (old.exists() && !old.delete()) throw new Exception("Impossible de remplacer " + name);
+                    if (!new File(staging, name).renameTo(old)) throw new Exception("Installation incomplète : " + name);
+                }
+                deleteRecursively(staging);
                 runOnUiThread(() -> status.setText(String.format(Locale.CANADA_FRENCH,
-                        "CARTE ROUTIÈRE IMPORTÉE · %.0f Mo · prête pour le calcul hors ligne",
-                        installed.length() / 1048576.0)));
+                        "PAQUET QUÉBEC INSTALLÉ · %.0f Mo · moteur hors ligne prêt",
+                        tiles.length() / 1048576.0)));
             } catch (Exception ex) {
-                temporary.delete();
+                deleteRecursively(staging);
                 runOnUiThread(() -> status.setText("Échec d'installation : " + ex.getMessage()));
             }
         });
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) for (File child : children) deleteRecursively(child);
+        }
+        file.delete();
     }
 
     private Button button(String label) {
