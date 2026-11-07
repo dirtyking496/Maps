@@ -192,9 +192,11 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                 deleteRecursively(staging);
                 runOnUiThread(() -> {
                     loadMapStyle();
+                    File installedTiles = new File(base, "valhalla_tiles.tar");
+                    File installedMap = new File(base, "quebec.pmtiles");
                     status.setText(String.format(Locale.CANADA_FRENCH,
                             "CARTES QUÉBEC INSTALLÉES · routage %.0f Mo · carte %.0f Mo",
-                            tiles.length() / 1048576.0, mapTiles.length() / 1048576.0));
+                            installedTiles.length() / 1048576.0, installedMap.length() / 1048576.0));
                 });
             } catch (Exception ex) {
                 deleteRecursively(staging);
@@ -206,6 +208,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
     /** Loads the province-wide PMTiles archive when installed; otherwise uses the online preview. */
     private void loadMapStyle() {
         if (map == null) return;
+        if (routeLine != null) { map.removePolyline(routeLine); routeLine = null; }
+        if (locationMarker != null) { map.removeMarker(locationMarker); locationMarker = null; }
         File localMap = new File(getFilesDir(), "offline/quebec/quebec.pmtiles");
         if (!localMap.isFile() || localMap.length() < 1024 * 1024) {
             map.setStyle("https://tiles.openfreemap.org/styles/liberty", style -> {
