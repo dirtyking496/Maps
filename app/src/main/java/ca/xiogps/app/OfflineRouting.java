@@ -6,6 +6,7 @@ import com.valhalla.valhalla.config.ValhallaConfigFactory;
 import com.valhalla.config.models.ValhallaConfig;
 import java.io.File;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
@@ -29,7 +30,11 @@ public final class OfflineRouting {
         try (InputStream input = ValhallaConfigFactory.class.getResourceAsStream(
                 "/com/valhalla/valhalla/default.json")) {
             if (input == null) throw new IllegalStateException("Configuration Valhalla introuvable.");
-            configJson = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
+            configJson = new String(bytes.toByteArray(), StandardCharsets.UTF_8);
         }
         configJson = configJson
                 .replace("\\"/data/valhalla/tiles.tar\\"", org.json.JSONObject.quote(tileExtract.getAbsolutePath()))
