@@ -202,7 +202,8 @@ public class MainActivity extends AppCompatActivity implements LocationListener 
                         .putString("destination_lon", String.valueOf(destLon))
                         .putInt("next_maneuver", 0)
                         .putLong("last_reroute_ms", 0L)
-                        .putBoolean("announced_500", false).putBoolean("announced_80", false).apply();
+                        .putBoolean("announced_500", false).putBoolean("announced_80", false)
+                        .putBoolean("offline_route_mode", false).apply();
                 double km = route.optDouble("distance") / 1000.0;
                 int minutes = (int)Math.round(route.optDouble("duration") / 60.0);
                 runOnUiThread(() -> {
