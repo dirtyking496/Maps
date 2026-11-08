@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - feature/quebec-offline-navigation
     paths:
       - .github/workflows/build-quebec-tiles.yml
@@ -71,16 +72,27 @@ jobs:
         run: |
           set -euo pipefail
           docker pull ghcr.io/onthegomap/planetiler:latest
-          docker run --rm \
+          attempt=1
+          max_attempts=3
+          until docker run --rm \
             -e JAVA_TOOL_OPTIONS="-Xmx2g" \
             -v "${{ github.workspace }}:/data" \
+            -w /data \
             ghcr.io/onthegomap/planetiler:latest \
             --osm-path=/data/quebec-latest.osm.pbf \
             --download \
             --output=/data/quebec.pmtiles \
             --force \
             --building-merge-z13=false \
-            --storage=mmap
+            --storage=mmap; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Planetiler failed after $max_attempts attempts; see the network/download error above."
+                exit 1
+              fi
+              echo "Planetiler attempt $attempt failed; retrying with the workspace download cache in 45 seconds..."
+              attempt=$((attempt + 1))
+              sleep 45
+          done
           test -s quebec.pmtiles
           ls -lh quebec.pmtiles
           df -h
@@ -94,6 +106,9 @@ jobs:
             valhalla_tiles/timezones.sqlite \
             quebec.pmtiles
           unzip -t xio-quebec-offline-pack.zip
+          for required in valhalla_tiles.tar admin.sqlite timezones.sqlite quebec.pmtiles; do
+            unzip -Z1 xio-quebec-offline-pack.zip | grep -Fxq "$required"
+          done
           ls -lh xio-quebec-offline-pack.zip
 
       - name: Upload Quebec offline map pack
