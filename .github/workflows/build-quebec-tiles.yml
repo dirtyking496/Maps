@@ -68,6 +68,30 @@ jobs:
           test -s valhalla_tiles/timezones.sqlite
           df -h
 
+      - name: Download Planetiler water polygons from mirror
+        run: |
+          set -euo pipefail
+          mirror_root="https://ftp.fau.de/mirrors/openstreetmapdata.com-archive"
+          echo "Looking up the newest dated FAU mirror directory..."
+          mirror_date="$(curl --fail --silent --show-error --location \
+            --retry 4 --retry-all-errors --connect-timeout 30 \
+            "${mirror_root}/" \
+            | grep -Eo '[0-9]{4}-[0-9]{2}-[0-9]{2}/' \
+            | tr -d '/' | sort -r | head -n 1)"
+          if [ -z "${mirror_date}" ]; then
+            echo "Could not find a dated water-polygons mirror directory at ${mirror_root}/"
+            exit 1
+          fi
+          water_url="${mirror_root}/${mirror_date}/water-polygons-split-3857.zip"
+          echo "Downloading water polygons from ${water_url}"
+          curl --fail --show-error --location --retry 6 --retry-all-errors \
+            --retry-delay 10 --connect-timeout 30 --continue-at - \
+            "${water_url}" -o water-polygons-split-3857.zip
+          unzip -t water-polygons-split-3857.zip
+          test -s water-polygons-split-3857.zip
+          ls -lh water-polygons-split-3857.zip
+          df -h
+
       - name: Build Quebec offline vector map tiles
         run: |
           set -euo pipefail
@@ -80,16 +104,17 @@ jobs:
             -w /data \
             ghcr.io/onthegomap/planetiler:latest \
             --osm-path=/data/quebec-latest.osm.pbf \
+            --water-polygons-path=/data/water-polygons-split-3857.zip \
             --download \
             --output=/data/quebec.pmtiles \
             --force \
             --building-merge-z13=false \
             --storage=mmap; do
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                echo "Planetiler failed after $max_attempts attempts; see the network/download error above."
+              if [ "${attempt}" -ge "${max_attempts}" ]; then
+                echo "Planetiler failed after ${max_attempts} attempts; see the error above."
                 exit 1
               fi
-              echo "Planetiler attempt $attempt failed; retrying with the workspace download cache in 45 seconds..."
+              echo "Planetiler attempt ${attempt} failed; retrying with the downloaded water-polygons file..."
               attempt=$((attempt + 1))
               sleep 45
           done
@@ -107,7 +132,7 @@ jobs:
             quebec.pmtiles
           unzip -t xio-quebec-offline-pack.zip
           for required in valhalla_tiles.tar admin.sqlite timezones.sqlite quebec.pmtiles; do
-            unzip -Z1 xio-quebec-offline-pack.zip | grep -Fxq "$required"
+            unzip -Z1 xio-quebec-offline-pack.zip | grep -Fxq "${required}"
           done
           ls -lh xio-quebec-offline-pack.zip
 
